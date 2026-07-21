@@ -77,14 +77,13 @@ function historyFor(turns: AssistantTurn[]): AssistantHistoryItem[] {
 export function AssistantSessionProvider({ facts, prediction, focusMode = 'all', comparisonLabel, children }: SessionProps) {
   const defaultQuestion = useMemo(() => questionFor(facts, focusMode), [facts, focusMode]);
   const baseline = useMemo(() => buildLocalAssistantResponse(facts, prediction, defaultQuestion), [defaultQuestion, facts, prediction]);
-  const [question, setQuestion] = useState(defaultQuestion);
+  const [question, setQuestion] = useState('');
   const [turns, setTurns] = useState<AssistantTurn[]>([]);
   const [pendingQuestion, setPendingQuestion] = useState<string>();
   const [busy, setBusy] = useState(false);
   const requestRef = useRef<{ id: number; controller: AbortController } | null>(null);
   const requestIdRef = useRef(0);
   const predictionIdRef = useRef(prediction.id);
-  const previousDefaultQuestionRef = useRef(defaultQuestion);
 
   const contextItems = useMemo(() => [
     prediction.label,
@@ -98,18 +97,11 @@ export function AssistantSessionProvider({ facts, prediction, focusMode = 'all',
     predictionIdRef.current = prediction.id;
     requestRef.current?.controller.abort();
     requestIdRef.current += 1;
-    setQuestion(defaultQuestion);
+    setQuestion('');
     setTurns([]);
     setPendingQuestion(undefined);
     setBusy(false);
-  }, [defaultQuestion, prediction.id]);
-
-  useEffect(() => {
-    if (turns.length === 0) {
-      setQuestion((current) => current === previousDefaultQuestionRef.current || current.trim() === '' ? defaultQuestion : current);
-    }
-    previousDefaultQuestionRef.current = defaultQuestion;
-  }, [defaultQuestion, turns.length]);
+  }, [prediction.id]);
 
   useEffect(() => {
     return () => requestRef.current?.controller.abort();

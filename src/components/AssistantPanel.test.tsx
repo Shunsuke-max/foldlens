@@ -27,7 +27,9 @@ describe('AssistantPanel session lifecycle', () => {
     expect(screen.getByText(prediction.label)).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Show interface' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Show S 612–626' })).toBeTruthy();
+    expect((screen.getByLabelText('Ask about this prediction') as HTMLTextAreaElement).value).toBe('');
     expect(screen.getByRole('button', { name: 'Ask FoldLens' })).toBeTruthy();
+    expect((screen.getByRole('button', { name: 'Ask FoldLens' }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('discards an old model response after the selected prediction changes', async () => {
