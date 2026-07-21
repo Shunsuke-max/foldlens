@@ -26,7 +26,8 @@ describe('AssistantPanel session lifecycle', () => {
     expect(screen.getByText('Live structure context')).toBeTruthy();
     expect(screen.getByText(prediction.label)).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Show interface' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Show S 612–626' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Show B 43–58' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'What does HIV-1 protease do?' })).toBeTruthy();
     expect((screen.getByLabelText('Ask about this prediction') as HTMLTextAreaElement).value).toBe('');
     expect(screen.getByRole('button', { name: 'Ask FoldLens' })).toBeTruthy();
     expect((screen.getByRole('button', { name: 'Ask FoldLens' }) as HTMLButtonElement).disabled).toBe(true);
@@ -78,7 +79,7 @@ describe('AssistantPanel session lifecycle', () => {
     }), { status: 200, headers: { 'Content-Type': 'application/json' } })));
     const prediction = demoResult.predictions[0];
     const initialFacts = buildAnalysisFacts(demoResult, prediction, null);
-    const selectedFacts = buildAnalysisFacts(demoResult, prediction, { xStart: 0, xEnd: 5, yStart: 128, yEnd: 130 });
+    const selectedFacts = buildAnalysisFacts(demoResult, prediction, { xStart: 0, xEnd: 5, yStart: 99, yEnd: 101 });
     const { rerender } = render(
       <AssistantSessionProvider facts={initialFacts} prediction={prediction}>
         <AssistantPanel onAction={() => undefined} />

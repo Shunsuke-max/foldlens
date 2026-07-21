@@ -11,7 +11,7 @@ describe('OpenResultDialog', () => {
     const confirm = vi.fn();
     render(<OpenResultDialog open busy={false} preview={demoResult} onClose={vi.fn()} onFiles={vi.fn()} onConfirm={confirm} onBack={vi.fn()} />);
     expect(screen.getByText('Ready to open')).toBeTruthy();
-    expect(screen.getByText('2 ligand')).toBeTruthy();
+    expect(screen.getByText('1 ligand')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Open 5 predictions' }));
     expect(confirm).toHaveBeenCalledOnce();
   });

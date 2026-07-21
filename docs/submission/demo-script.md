@@ -10,7 +10,7 @@ Core story: **FoldLens takes a scientific question back to the exact evidence th
 
 **Screen**
 
-- Begin on the completed Ask FoldLens answer for `Is the Q–S interface reliable?`
+- Begin on the completed Ask FoldLens answer for `Is the A–B interface reliable?`
 - Keep the `GPT-5.6` source label, Evidence section, and Caveat visible.
 - Click **Show interface**. Let the interface highlight appear in the 3D viewer and PAE workspace.
 
@@ -75,12 +75,12 @@ Core story: **FoldLens takes a scientific question back to the exact evidence th
 
 - Rotate the 3D structure slightly.
 - Switch once between chain and confidence coloring.
-- Select the Q-aligned-to-S PAE region.
+- Select the A-aligned-to-B PAE region.
 - Hold on the amber residue highlight and reciprocal median PAE value.
 
 **Narration**
 
-> Here, the active prediction stays attached to its ranking score, ipTM, pTM, clash status, and full PAE matrix. When I select the Q-to-S region in the heatmap, FoldLens maps that selection back to the corresponding chains and residue range in 3D.
+> Here, the active prediction stays attached to its ranking score, ipTM, pTM, clash status, and full PAE matrix. When I select the A-to-B region in the heatmap, FoldLens maps that selection back to the corresponding chains and residue range in 3D.
 
 **On-screen text**
 
@@ -91,14 +91,14 @@ Core story: **FoldLens takes a scientific question back to the exact evidence th
 **Screen**
 
 - Open **Ask FoldLens**.
-- Enter `Is the Q–S interface reliable?`
+- Enter `Is the A–B interface reliable?`
 - Submit the question.
 - Show the live loading state briefly, then the completed answer.
 - Keep the source label, evidence rows, caveat, and action buttons visible.
 
 **Narration**
 
-> Now I will ask, “Is the Q–S interface reliable?” FoldLens first derives a compact, deterministic fact set from the active model and current selection. GPT-5.6 receives only those facts and my question—not the raw scientific files. The response separates interface confidence from experimental validation and cites the metrics and residue ranges behind its conclusion.
+> Now I will ask, “Is the A–B interface reliable?” FoldLens first derives a compact, deterministic fact set from the active model and current selection. GPT-5.6 receives only those facts and my question—not the raw scientific files. The response separates interface confidence from experimental validation and cites the metrics and residue ranges behind its conclusion.
 
 **On-screen text**
 
@@ -109,7 +109,7 @@ Core story: **FoldLens takes a scientific question back to the exact evidence th
 **Screen**
 
 - Click **Show interface**.
-- Then click **Show S 612–626**.
+- Then click **Show B 43–58**.
 - Hold on the linked 3D highlight and PAE selection.
 
 **Narration**

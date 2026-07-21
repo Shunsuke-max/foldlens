@@ -8,9 +8,9 @@ afterEach(() => vi.restoreAllMocks());
 
 describe('FoldLens exports', () => {
   it('creates a versioned resumable session', () => {
-    const session = createSession(demoResult, { selectedId: 'demo-1', visibleChains: ['Q', 'S'], colorMode: 'chains', brightness: 200, surface: true, surfaceOnly: true, selection: null });
+    const session = createSession(demoResult, { selectedId: 'demo-1', visibleChains: ['A', 'B'], colorMode: 'chains', brightness: 200, surface: true, surfaceOnly: true, selection: null });
     expect(session).toMatchObject({ format: 'foldlens-session', version: 1 });
-    expect(session.view.visibleChains).toEqual(['Q', 'S']);
+    expect(session.view.visibleChains).toEqual(['A', 'B']);
     expect(session.view.surfaceOnly).toBe(true);
     expect(session.view.brightness).toBe(200);
     expect(isSession(session)).toBe(true);
@@ -20,11 +20,11 @@ describe('FoldLens exports', () => {
 
   it('builds a self-contained confidence report with scoped metrics and caveats', () => {
     const prediction = demoResult.predictions[0];
-    const html = buildHtmlReport({ result: demoResult, prediction, facts: buildAnalysisFacts(demoResult, prediction, null), selectionLabel: 'S 612–626' });
+    const html = buildHtmlReport({ result: demoResult, prediction, facts: buildAnalysisFacts(demoResult, prediction, null), selectionLabel: 'B 43–58' });
     expect(html).toContain('Global ipTM');
-    expect(html).toContain('Q–S');
+    expect(html).toContain('A–B');
     expect(html).toContain('not experimental validation or biological truth');
-    expect(html).toContain('S 612–626');
+    expect(html).toContain('B 43–58');
   });
 
   it('rejects malformed sessions and selections before they reach the workspace', async () => {
@@ -35,12 +35,12 @@ describe('FoldLens exports', () => {
   }, 10_000);
 
   it('rejects inconsistent optional arrays and unknown view references', () => {
-    const inconsistent = structuredClone(createSession(demoResult, { selectedId: 'demo-1', visibleChains: ['Q'], colorMode: 'chains', surface: false, selection: null }));
+    const inconsistent = structuredClone(createSession(demoResult, { selectedId: 'demo-1', visibleChains: ['A'], colorMode: 'chains', surface: false, selection: null }));
     inconsistent.result.predictions[0].confidence!.atomPlddts = [90, 80];
-    inconsistent.result.predictions[0].confidence!.atomChainIds = ['Q'];
+    inconsistent.result.predictions[0].confidence!.atomChainIds = ['A'];
     expect(isSession(inconsistent)).toBe(false);
 
-    const unknownDomain = structuredClone(createSession(demoResult, { selectedId: 'demo-1', visibleChains: ['Q'], colorMode: 'chains', surface: false, focusMode: 'domains', selectedDomainId: 'missing', selection: null }));
+    const unknownDomain = structuredClone(createSession(demoResult, { selectedId: 'demo-1', visibleChains: ['A'], colorMode: 'chains', surface: false, focusMode: 'domains', selectedDomainId: 'missing', selection: null }));
     expect(isSession(unknownDomain)).toBe(false);
   });
 

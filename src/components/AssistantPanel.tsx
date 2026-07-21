@@ -40,7 +40,7 @@ type AssistantSession = {
 };
 
 const AssistantSessionContext = createContext<AssistantSession | null>(null);
-const CLIENT_ANALYSIS_TIMEOUT_MS = 15_000;
+const CLIENT_ANALYSIS_TIMEOUT_MS = 65_000;
 
 function fallbackNotice(reason?: string | null) {
   return `${reason ? `${reason}. ` : ''}This turn was computed only from the loaded confidence metrics.`;
@@ -164,7 +164,7 @@ export function AssistantSessionProvider({ facts, prediction, focusMode = 'all',
       if (requestId !== requestIdRef.current) return;
       if (controller.signal.aborted && !timedOut || error instanceof DOMException && error.name === 'AbortError' && !timedOut) return;
       responseData = localResponse;
-      notice = fallbackNotice(timedOut ? 'Live analysis timed out after 15 seconds' : 'Live analysis request failed');
+      notice = fallbackNotice(timedOut ? 'Live analysis timed out after 65 seconds' : 'Live analysis request failed');
     } finally {
       window.clearTimeout(timeout);
     }
@@ -226,6 +226,7 @@ function ScientificResponse({ turn, facts, onAction, onFollowUp, onRetry, busy }
   onRetry: (question: string) => void;
   busy: boolean;
 }) {
+  const isBackground = turn.response.kind === 'biological_background';
   return (
     <article className="assistant-response">
       <div className="assistant-byline">
@@ -233,17 +234,17 @@ function ScientificResponse({ turn, facts, onAction, onFollowUp, onRetry, busy }
         <small>{turn.source === 'live' ? turn.model : 'local metric fallback'}</small>
       </div>
       <section className="assistant-conclusion">
-        <span>Conclusion</span>
+        <span>{isBackground ? 'Scientific background' : 'Conclusion'}</span>
         <h2>{turn.response.answer}</h2>
       </section>
       <EvidenceSection response={turn.response} facts={facts} onAction={onAction} />
       <div className="scientific-interpretations">
         <section>
-          <span>Alternative interpretation</span>
+          <span>{isBackground ? 'Scope' : 'Alternative interpretation'}</span>
           <p>{turn.response.alternative}</p>
         </section>
         <section>
-          <span>What would change this</span>
+          <span>{isBackground ? 'How to verify' : 'What would change this'}</span>
           <p>{turn.response.falsification}</p>
         </section>
       </div>

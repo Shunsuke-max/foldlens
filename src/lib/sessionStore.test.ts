@@ -7,7 +7,7 @@ import { clearRecentSession, loadRecentSession, loadRecentSummary, recentSession
 describe('recent FoldLens session storage', () => {
   it('builds stable, minimal metadata for the continue card', () => {
     const savedAt = '2026-07-22T00:00:00.000Z';
-    const session = createSession(demoResult, { selectedId: 'demo-1', visibleChains: ['Q', 'S'], colorMode: 'chains', brightness: 120, surface: false, selection: null });
+    const session = createSession(demoResult, { selectedId: 'demo-1', visibleChains: ['A', 'B'], colorMode: 'chains', brightness: 120, surface: false, selection: null });
     session.savedAt = savedAt;
 
     expect(recentSessionSummary(session)).toEqual({

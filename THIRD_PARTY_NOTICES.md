@@ -1,12 +1,12 @@
 # Third-party notices
 
-## RCSB Protein Data Bank entry 1NVV
+## RCSB Protein Data Bank entry 4HLA
 
-The bundled sample structure at `src/assets/kras-sos1.cif` is RCSB PDB entry **1NVV**, “Structural evidence for feedback activation by RasGTP of the Ras-specific nucleotide exchange factor SOS.”
+The bundled sample structure at `src/assets/4hla.cif` is RCSB PDB entry **4HLA**, an HIV-1 protease dimer in complex with darunavir (PDB ligand code `017`).
 
-- Entry: https://www.rcsb.org/structure/1NVV
-- PDB DOI: https://doi.org/10.2210/pdb1NVV/pdb
-- Primary citation: Margarit SM et al. *Cell* 112, 685–695 (2003). https://doi.org/10.1016/S0092-8674(03)00149-1
+- Entry: https://www.rcsb.org/structure/4HLA
+- PDB DOI: https://doi.org/10.2210/pdb4HLA/pdb
+- Primary citation: Yedidi RS et al. *Antimicrobial Agents and Chemotherapy* 57, 4920–4927 (2013). https://doi.org/10.1128/AAC.00868-13
 
 The sample confidence values and PAE matrix are illustrative FoldLens data. They are not experimental measurements and are not AlphaFold Server output.
 

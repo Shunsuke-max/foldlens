@@ -1,5 +1,5 @@
 import type { AF3Result, DomainRegion, Prediction, ResidueRange, Selection, TokenResidue } from '../types/af3';
-import type { AnalysisFacts, AssistantEvidence, AssistantIntent, AssistantPlan, AssistantResponse, EvidenceRef, InterfaceFact, LowConfidenceRegion } from '../types/analysis';
+import type { AnalysisFacts, AssistantDraft, AssistantEvidence, AssistantIntent, AssistantPlan, AssistantResponse, EvidenceRef, InterfaceFact, LowConfidenceRegion } from '../types/analysis';
 import { inferDomains } from './domains';
 import { chainPairPaeSummary, robustPairSelection, selectionPaeSummary } from './pae';
 
@@ -155,6 +155,7 @@ export function buildAnalysisFacts(result: AF3Result, prediction: Prediction, se
       residueRanges: ranges,
       matrixRange: { ...selection },
     } : null,
+    biologicalContext: result.biologicalContext ?? null,
     notices: result.notices,
   };
 }
@@ -229,7 +230,7 @@ function legacyBuildLocalAssistantResponse(facts: AnalysisFacts, prediction?: Pr
     action: { type: 'show_selection', chainIds: [...new Set(facts.selection.residueRanges.map((range) => range.chainId))], residueRanges: facts.selection.residueRanges, selection: facts.selection.matrixRange },
   });
 
-  const asksForBiology = /(drug|clinical|disease|treat|efficacy|mechanism|function|binds? in vivo|biologically correct)/.test(normalizedQuestion);
+  const asksForClinical = /(drug|clinical|patient|treat|efficacy|effective in|binds? in vivo|biologically correct)/.test(normalizedQuestion);
   const asksForUncertainty = /(uncertain|avoid|caution|least confident|lowest confidence|low confidence|weakest confidence|weak|unreliable|inspect first)/.test(normalizedQuestion);
   const asksForClash = /(clash|overlap|steric)/.test(normalizedQuestion);
   const asksForSelection = /(selected|selection|this region)/.test(normalizedQuestion) && Boolean(facts.selection);
@@ -241,8 +242,8 @@ function legacyBuildLocalAssistantResponse(facts: AnalysisFacts, prediction?: Pr
   const mixedStrong = interfaceIptm >= 0.8 && interfacePae !== null && interfacePae !== undefined && interfacePae <= 10;
   const highIptm = interfaceIptm >= 0.8;
   const moderate = (primary?.iptm ?? 0) >= 0.6;
-  const alternative = asksForBiology
-    ? 'A biological explanation may be plausible, but the loaded confidence outputs cannot distinguish it from other functional interpretations.'
+  const alternative = asksForClinical
+    ? 'General biological background can describe the protein, but the loaded confidence outputs cannot establish therapeutic efficacy or clinical relevance.'
     : facts.selection
       ? 'The selected PAE may reflect uncertain relative placement rather than poor local folding; inspect local pLDDT separately.'
       : highIptm
@@ -256,8 +257,8 @@ function legacyBuildLocalAssistantResponse(facts: AnalysisFacts, prediction?: Pr
       ? 'A different prediction with a conflicting ipTM, reciprocal PAE pattern, or clash status would change this interface-level conclusion.'
       : 'Additional pLDDT or PAE evidence tied to a specific region would be needed to replace this limited conclusion.';
   let answer: string;
-  if (asksForBiology) {
-    answer = 'The loaded confidence metrics cannot establish biological function, efficacy, or clinical relevance. They only describe confidence in this prediction.';
+  if (asksForClinical) {
+    answer = 'General protein function can be discussed separately, but the loaded confidence metrics cannot establish therapeutic efficacy, clinical relevance, or binding in vivo.';
   } else if (asksForDomains) {
     answer = domainToInspect
       ? `${domainToInspect.label} (${domainToInspect.chainId} ${domainToInspect.start}–${domainToInspect.end}) deserves the closest inspection${domainToInspect.meanPlddt !== null ? `; its mean pLDDT is ${Math.round(domainToInspect.meanPlddt)}` : ''}.`
@@ -293,6 +294,7 @@ function legacyBuildLocalAssistantResponse(facts: AnalysisFacts, prediction?: Pr
         : 'The supplied confidence metrics do not support a reliable interface-level conclusion.';
   }
   return {
+    kind: 'confidence_analysis',
     answer,
     evidence: evidence.slice(0, 4),
     alternative,
@@ -413,7 +415,8 @@ function detectLanguage(question: string): 'en' | 'ja' {
 function inferIntent(question: string, facts: AnalysisFacts): AssistantIntent {
   const normalized = question.toLowerCase();
   if (!normalized.trim() && facts.selection) return 'selection_support';
-  if (/(drug|clinical|disease|treat|efficacy|mechanism|function|binds? in vivo|biologically correct|薬|臨床|疾患|治療|有効|効能|機序|機能|生物学)/.test(normalized)) return 'scope_boundary';
+  if (/(clinical|clinically|patient|therapeutic|treat(?:ment)?|efficacy|effective in|will .* work|diagnos|dose|safety|binds? in vivo|biologically correct|臨床|患者|治療|有効|効く|診断|投与|安全性|生体内で結合)/.test(normalized)) return 'scope_boundary';
+  if (/(what (?:is|does)|what.*(?:protein|enzyme).*(?:do|used)|function|biological role|mechanism|pathway|organism|disease association|known about|protein used for|何に使|何をする|どんなタンパク|何のタンパク|機能|役割|働き|作用|機序|経路|生物学|疾患との関係)/.test(normalized)) return 'biological_context';
   if (/(compare|comparison|versus|difference|比較|違い|差分)/.test(normalized)) return 'comparison';
   if (/(domain|structural region|ドメイン|構造領域)/.test(normalized)) return 'structural_region_priority';
   if (/(selected|selection|this region|選択|この領域)/.test(normalized) && facts.selection) return 'selection_support';
@@ -433,6 +436,7 @@ function questionForIntent(intent: AssistantIntent) {
     regional_uncertainty: 'Which region has the lowest confidence?',
     structural_region_priority: 'Which structural region has the weakest confidence?',
     clash_review: 'Does this model have a clash?',
+    biological_context: 'What does this protein do?',
     scope_boundary: 'Will this work clinically?',
     alternative_interpretation: 'Challenge this interpretation.',
     falsification: 'What would change this conclusion?',
@@ -442,6 +446,7 @@ function questionForIntent(intent: AssistantIntent) {
 }
 
 function defaultEvidenceRefs(intent: AssistantIntent): EvidenceRef[] {
+  if (intent === 'biological_context' || intent === 'scope_boundary') return [];
   if (intent === 'selection_support') return ['active_selection_pae', 'lowest_confidence_region', 'primary_interface_pae'];
   if (intent === 'structural_region_priority') return ['top_structural_region_plddt', 'top_structural_region_pae', 'lowest_confidence_region'];
   if (intent === 'regional_uncertainty') return ['lowest_confidence_region', 'primary_interface_pae', 'primary_interface_iptm'];
@@ -451,6 +456,7 @@ function defaultEvidenceRefs(intent: AssistantIntent): EvidenceRef[] {
 
 function followUpQuestion(intent: AssistantIntent, facts: AnalysisFacts, language: 'en' | 'ja') {
   const pair = facts.primaryInterface ? `${facts.primaryInterface.chainA}–${facts.primaryInterface.chainB}` : 'primary';
+  const proteinName = facts.biologicalContext?.displayName ?? 'this protein';
   const english: Record<AssistantIntent, string> = {
     overall_assessment: 'What is the strongest evidence for this conclusion?',
     interface_reliability: `Which part of the ${pair} interface is least certain?`,
@@ -458,6 +464,7 @@ function followUpQuestion(intent: AssistantIntent, facts: AnalysisFacts, languag
     regional_uncertainty: 'Which region has the lowest confidence?',
     structural_region_priority: 'Which structural region has the weakest confidence?',
     clash_review: 'Does the summary report a clash?',
+    biological_context: `What does ${proteinName} do?`,
     scope_boundary: 'What can these confidence metrics support?',
     alternative_interpretation: 'Challenge this interpretation.',
     falsification: 'What would change this conclusion?',
@@ -470,6 +477,7 @@ function followUpQuestion(intent: AssistantIntent, facts: AnalysisFacts, languag
     regional_uncertainty: '予測信頼度が最も低い領域はどこですか？',
     structural_region_priority: '予測信頼度が最も低い構造領域はどこですか？',
     clash_review: 'サマリーに衝突フラグはありますか？',
+    biological_context: `${proteinName}は生物学的にどのような役割を持ちますか？`,
     scope_boundary: 'この信頼度指標から何が言えますか？',
     alternative_interpretation: 'この解釈に対する別の説明はありますか？',
     falsification: '何があればこの結論は変わりますか？',
@@ -489,7 +497,7 @@ function japaneseResponse(base: AssistantResponse, intent: AssistantIntent, fact
   const strong = highIptm && interfacePae !== null && interfacePae !== undefined && interfacePae <= 5;
   const mixed = highIptm && interfacePae !== null && interfacePae !== undefined && interfacePae <= 10;
   const alternative = intent === 'scope_boundary'
-    ? '生物学的な説明は仮説として考えられますが、読み込んだ信頼度出力だけでは他の機能解釈と区別できません。'
+    ? '一般的な生物学背景は説明できますが、この予測信頼度から治療効果や臨床的意義を結論づけることはできません。'
     : facts.selection
       ? '選択領域のPAEは局所構造の崩れではなく相対配置の不確実性を示す可能性があります。局所pLDDTも確認してください。'
       : highIptm
@@ -501,7 +509,7 @@ function japaneseResponse(base: AssistantResponse, intent: AssistantIntent, fact
       ? '別の予測でipTM、双方向PAE、衝突フラグが矛盾すれば、この界面レベルの結論は変わります。'
       : '特定領域に対応するpLDDTまたはPAEが追加されれば、この限定的な結論を更新できます。';
   let answer: string;
-  if (intent === 'scope_boundary') answer = '読み込んだ信頼度指標から、生物学的機能・治療効果・臨床的意義を確定することはできません。この予測に対する信頼度だけを示します。';
+  if (intent === 'scope_boundary') answer = 'タンパク質の一般的な機能は説明できますが、読み込んだ信頼度指標から治療効果・臨床的意義・生体内での結合を確定することはできません。';
   else if (intent === 'comparison') answer = '比較対象のラベルだけではモデル間の差を根拠付きで評価できません。各予測の同じ指標を並べた比較データが必要です。';
   else if (intent === 'structural_region_priority') answer = domain && domainRange
     ? `${domain.label}（${domainRange.chainId} ${domainRange.start}–${domainRange.end}）を優先して確認してください${domain.meanPlddt !== null ? `。平均pLDDTは${Math.round(domain.meanPlddt)}です` : ''}。`
@@ -540,6 +548,37 @@ function japaneseResponse(base: AssistantResponse, intent: AssistantIntent, fact
 export function buildLocalAssistantResponse(facts: AnalysisFacts, prediction?: Prediction, question = '', plan?: AssistantPlan): AssistantResponse {
   const intent = plan?.intent ?? inferIntent(question, facts);
   const language = plan?.language ?? detectLanguage(question);
+  if (intent === 'biological_context') {
+    const context = facts.biologicalContext;
+    const supplied = context
+      ? [context.summary[language], context.relevance?.[language]].filter(Boolean).join(' ')
+      : language === 'ja'
+        ? `読み込まれた名前「${facts.jobName}」だけでは、タンパク質の同定と機能を確実に説明できません。注釈付きの名前やUniProt/PDB識別子が必要です。`
+        : `The loaded name “${facts.jobName}” is not enough to identify the protein and explain its function reliably. An annotated name or UniProt/PDB identifier is needed.`;
+    const plannedBackground = plan?.backgroundAnswer?.trim();
+    const boundaryOnly = plannedBackground && /(do not establish|does not establish|cannot establish|only describe confidence|not inferred from|信頼度.*(?:確定|判断|説明でき)|機能.*(?:分から|わから)|推定できません)/i.test(plannedBackground);
+    const answer = (plannedBackground && !(context && boundaryOnly) ? plannedBackground : supplied).slice(0, 500);
+    const followUpIntents = plan?.followUpIntents.length
+      ? plan.followUpIntents
+      : ['biological_context', 'overall_assessment', 'scope_boundary'] satisfies AssistantIntent[];
+    return {
+      kind: 'biological_background',
+      answer,
+      evidence: [],
+      alternative: language === 'ja'
+        ? 'これはタンパク質名と注釈に基づく一般的な科学背景であり、pLDDT、PAE、ipTMから機能を推定した結果ではありません。'
+        : 'This is general scientific background based on the protein identity and annotation, not a function inferred from pLDDT, PAE, or ipTM.',
+      falsification: language === 'ja'
+        ? 'タンパク質の同定、生物種、機能は、元ファイルの注釈やUniProt、PDBなどのキュレートされた情報で確認できます。'
+        : 'Verify the protein identity, organism, and function against the source annotation or a curated resource such as UniProt or PDB.',
+      nextQuestions: [...new Set(followUpIntents.map((nextIntent) => followUpQuestion(nextIntent, facts, language)))].slice(0, 3),
+      caveats: [
+        language === 'ja' ? '基礎的な生物学背景と、読み込んだ予測の信頼度は別の情報です。' : 'General biological background and confidence in the loaded prediction are separate kinds of information.',
+        ...(context ? [context.sourceLabel] : []),
+        ...facts.notices,
+      ].slice(0, 3),
+    };
+  }
   const base = legacyBuildLocalAssistantResponse(facts, prediction, plan ? questionForIntent(intent) : question);
   const domain = topStructuralRegion(facts);
   const domainRange = domain ? loadedDomainRange(facts, domain.chainId, domain.start, domain.end) : null;
@@ -549,18 +588,40 @@ export function buildLocalAssistantResponse(facts: AnalysisFacts, prediction?: P
       ? { ...base, answer: `${domain.label} (${domainRange.chainId} ${domainRange.start}–${domainRange.end}) deserves the closest inspection${domain.meanPlddt !== null ? `; its mean pLDDT is ${Math.round(domain.meanPlddt)}` : ''}.` }
       : base;
   const catalog = buildEvidenceCatalog(facts);
-  const requestedRefs = plan?.evidenceRefs.length ? plan.evidenceRefs : defaultEvidenceRefs(intent);
+  const requestedRefs = plan ? plan.evidenceRefs : defaultEvidenceRefs(intent);
   let evidence = requestedRefs.map((ref) => catalog.get(ref)).filter((item): item is AssistantEvidence => Boolean(item));
-  if (!evidence.length) evidence = defaultEvidenceRefs(intent).map((ref) => catalog.get(ref)).filter((item): item is AssistantEvidence => Boolean(item));
+  if (!evidence.length && intent !== 'scope_boundary') evidence = defaultEvidenceRefs(intent).map((ref) => catalog.get(ref)).filter((item): item is AssistantEvidence => Boolean(item));
   const defaultFollowUps: AssistantIntent[] = facts.selection
     ? ['selection_support', 'alternative_interpretation', 'falsification']
     : facts.primaryInterface
-      ? ['regional_uncertainty', 'alternative_interpretation', 'falsification']
+      ? facts.biologicalContext
+        ? ['biological_context', 'regional_uncertainty', 'falsification']
+        : ['regional_uncertainty', 'alternative_interpretation', 'falsification']
       : ['overall_assessment', 'regional_uncertainty', 'falsification'];
   const followUpIntents = plan?.followUpIntents.length ? plan.followUpIntents : defaultFollowUps;
   return {
     ...localized,
     evidence: evidence.slice(0, 4),
     nextQuestions: [...new Set(followUpIntents.map((nextIntent) => followUpQuestion(nextIntent, facts, language)))].slice(0, 3),
+  };
+}
+
+export function buildDraftedAssistantResponse(facts: AnalysisFacts, question: string, draft: AssistantDraft): AssistantResponse {
+  const plan: AssistantPlan = {
+    intent: draft.intent,
+    evidenceRefs: draft.evidenceRefs,
+    language: draft.language,
+    followUpIntents: [],
+    backgroundAnswer: draft.intent === 'biological_context' ? draft.answer : null,
+  };
+  const grounded = buildLocalAssistantResponse(facts, undefined, question, plan);
+  const caveats = [...new Set([...grounded.caveats.slice(0, 1), ...draft.caveats, ...grounded.caveats.slice(1)])].slice(0, 4);
+  return {
+    ...grounded,
+    answer: draft.answer,
+    alternative: draft.alternative,
+    falsification: draft.falsification,
+    nextQuestions: draft.nextQuestions,
+    caveats,
   };
 }

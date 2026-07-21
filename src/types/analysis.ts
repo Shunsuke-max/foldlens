@@ -1,4 +1,4 @@
-import type { DomainRegion, ResidueRange, Selection } from './af3';
+import type { BiologicalContext, DomainRegion, ResidueRange, Selection } from './af3';
 
 export type InterfaceFact = {
   chainA: string;
@@ -45,6 +45,7 @@ export type AnalysisFacts = {
   domains: DomainFact[];
   lowConfidenceRegions: LowConfidenceRegion[];
   selection: SelectionFact | null;
+  biologicalContext: BiologicalContext | null;
   notices: string[];
 };
 
@@ -64,6 +65,7 @@ export type AssistantEvidence = {
 };
 
 export type AssistantResponse = {
+  kind: 'confidence_analysis' | 'biological_background';
   answer: string;
   evidence: AssistantEvidence[];
   alternative: string;
@@ -79,6 +81,7 @@ export type AssistantIntent =
   | 'regional_uncertainty'
   | 'structural_region_priority'
   | 'clash_review'
+  | 'biological_context'
   | 'scope_boundary'
   | 'alternative_interpretation'
   | 'falsification'
@@ -101,6 +104,18 @@ export type AssistantPlan = {
   evidenceRefs: EvidenceRef[];
   language: 'en' | 'ja';
   followUpIntents: AssistantIntent[];
+  backgroundAnswer: string | null;
+};
+
+export type AssistantDraft = {
+  intent: AssistantIntent;
+  evidenceRefs: EvidenceRef[];
+  language: 'en' | 'ja';
+  answer: string;
+  alternative: string;
+  falsification: string;
+  nextQuestions: string[];
+  caveats: string[];
 };
 
 export type AssistantHistoryItem = {
