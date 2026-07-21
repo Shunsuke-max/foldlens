@@ -114,7 +114,14 @@ export function isSession(value: unknown): value is FoldLensSession {
     && result && typeof result.jobName === 'string' && typeof result.sourceName === 'string'
     && Array.isArray(result.predictions) && result.predictions.length > 0 && result.predictions.length <= 12 && result.predictions.every(validPrediction)
     && Array.isArray(result.chains) && result.chains.length > 0 && result.chains.length <= 256
-    && result.chains.every((chain) => isRecord(chain) && typeof chain.id === 'string' && typeof chain.label === 'string' && typeof chain.color === 'string' && ['protein', 'nucleic', 'ligand', 'unknown'].includes(String(chain.kind)))
+    && result.chains.every((chain) => isRecord(chain)
+      && typeof chain.id === 'string'
+      && typeof chain.label === 'string'
+      && typeof chain.color === 'string'
+      && ['protein', 'nucleic', 'ligand', 'unknown'].includes(String(chain.kind))
+      && (chain.ligandCodes === undefined || Array.isArray(chain.ligandCodes) && chain.ligandCodes.length <= 32 && chain.ligandCodes.every((code) => typeof code === 'string' && code.length <= 16))
+      && (chain.sourceChainIds === undefined || Array.isArray(chain.sourceChainIds) && chain.sourceChainIds.length <= 64 && chain.sourceChainIds.every((id) => typeof id === 'string' && id.length <= 64))
+      && (chain.instanceCount === undefined || Number.isSafeInteger(chain.instanceCount) && chain.instanceCount > 0 && chain.instanceCount <= 10_000))
     && Array.isArray(result.notices) && result.notices.length <= 32 && result.notices.every((notice) => typeof notice === 'string')
     && view && typeof view.selectedId === 'string' && Array.isArray(view.visibleChains)
     && view.visibleChains.every((id) => typeof id === 'string')
@@ -122,7 +129,9 @@ export function isSession(value: unknown): value is FoldLensSession {
     && typeof view.surface === 'boolean'
     && (view.surfaceOnly === undefined || typeof view.surfaceOnly === 'boolean')
     && (view.focusMode === undefined || ['all', 'interface', 'pocket', 'domains'].includes(view.focusMode))
-    && (view.selectedDomainId === undefined || typeof view.selectedDomainId === 'string'))) return false;
+    && (view.selectedDomainId === undefined || typeof view.selectedDomainId === 'string')
+    && (view.mobileTab === undefined || ['structure', 'pae', 'models', 'insights'].includes(view.mobileTab))
+    && (view.inspectorTab === undefined || view.inspectorTab === 'analysis' || view.inspectorTab === 'ask'))) return false;
   if (new Set(result.predictions.map((item) => item.id)).size !== result.predictions.length || new Set(result.chains.map((chain) => chain.id)).size !== result.chains.length) return false;
   if (result.domainAnnotations !== undefined && (!Array.isArray(result.domainAnnotations) || result.domainAnnotations.length > 256 || !result.domainAnnotations.every((domain) => isRecord(domain) && typeof domain.id === 'string' && typeof domain.label === 'string' && typeof domain.chainId === 'string' && Number.isSafeInteger(domain.start) && Number.isSafeInteger(domain.end) && domain.start <= domain.end && (domain.source === 'interpro' || domain.source === 'provided')))) return false;
   const prediction = result.predictions.find((item) => item.id === view.selectedId);

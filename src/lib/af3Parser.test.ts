@@ -91,6 +91,29 @@ describe('parseEntries', () => {
     ]);
   });
 
+  it('discovers a named ligand embedded in a protein auth chain from a bare CIF', () => {
+    const cif = [
+      'data_test', 'loop_', '_atom_site.group_PDB', '_atom_site.label_atom_id', '_atom_site.label_comp_id',
+      '_atom_site.label_asym_id', '_atom_site.label_seq_id', '_atom_site.B_iso_or_equiv',
+      '_atom_site.auth_seq_id', '_atom_site.auth_comp_id', '_atom_site.auth_asym_id',
+      'ATOM CA ALA A 1 80.0 1 ALA Q',
+      'HETATM FE HEM B 1 40.0 142 HEM Q',
+      'HETATM NA HEM B 1 42.0 142 HEM Q', '#',
+    ].join('\n');
+    const result = parseEntries([{ path: 'hemoglobin.cif', text: cif }], 'hemoglobin.cif');
+    expect(result.chains).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'Q', kind: 'protein' }),
+      expect.objectContaining({
+        id: 'ligand:HEM',
+        kind: 'ligand',
+        label: 'Ligand · HEM',
+        ligandCodes: ['HEM'],
+        sourceChainIds: ['Q'],
+        instanceCount: 1,
+      }),
+    ]));
+  });
+
   it('deduplicates the official top-level model copy and preserves sample identity', () => {
     const cif = 'data_same_structure';
     const result = parseEntries([

@@ -4,6 +4,12 @@ export type ChainInfo = {
   kind: 'protein' | 'nucleic' | 'ligand' | 'unknown';
   color: string;
   range?: string;
+  /** CCD/residue identifiers used to select this ligand in structure coordinates. */
+  ligandCodes?: string[];
+  /** Coordinate-chain identifiers, which can differ from the logical AF3 entity id. */
+  sourceChainIds?: string[];
+  /** Number of equivalent ligand instances represented by this entry. */
+  instanceCount?: number;
 };
 
 export type AF3Summary = {
@@ -94,6 +100,8 @@ export type FoldLensViewState = {
   surfaceOnly?: boolean;
   focusMode?: FocusMode;
   selectedDomainId?: string;
+  mobileTab?: 'structure' | 'pae' | 'models' | 'insights';
+  inspectorTab?: 'analysis' | 'ask';
   selection: Selection;
 };
 

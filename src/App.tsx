@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AppHeader } from './components/AppHeader';
 import { ComparisonSummary } from './components/ComparisonSummary';
 import { FocusModeControl } from './components/FocusModeControl';
@@ -21,6 +21,7 @@ import { inferDomains } from './lib/domains';
 import { ligandFocusFromChains } from './lib/focusMode';
 import { colorModeAfterClick, restoredVisibleChainIds } from './lib/viewMode';
 import { isGroundedEvidenceAction } from './lib/analysisSchema';
+import { clearRecentSession, loadRecentSession, loadRecentSummary, resultStorageKey, saveRecentResult, saveRecentView, type RecentSessionSummary } from './lib/sessionStore';
 import type { AF3Result, FocusMode, FoldLensViewState, Selection } from './types/af3';
 import type { EvidenceAction } from './types/analysis';
 
@@ -52,6 +53,7 @@ export default function App() {
   const [selection, setSelection] = useState<Selection>(null);
   const [resetSignal, setResetSignal] = useState(0);
   const [mobileTab, setMobileTab] = useState<MobileTab>('structure');
+  const [inspectorTab, setInspectorTab] = useState<'analysis' | 'ask'>('ask');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [demoBusy, setDemoBusy] = useState(false);
@@ -60,6 +62,10 @@ export default function App() {
   const [toast, setToast] = useState<string>();
   const [pendingResult, setPendingResult] = useState<AF3Result>();
   const [pendingView, setPendingView] = useState<FoldLensViewState>();
+  const [recentSession, setRecentSession] = useState<RecentSessionSummary | null>(null);
+  const [resumeBusy, setResumeBusy] = useState(false);
+  const persistenceWarningShown = useRef(false);
+  const persistedViewResult = useRef<string | undefined>(undefined);
 
   const prediction = useMemo(
     () => result.predictions.find((item) => item.id === selectedId) ?? result.predictions[0],
@@ -79,6 +85,55 @@ export default function App() {
     : undefined;
   const domainSource = domains.every((domain) => domain.source === 'pae') ? 'pae'
     : domains.some((domain) => domain.source === 'pae') ? 'mixed' : 'annotation';
+  const visibleChainIds = useMemo(() => [...visibleChains], [visibleChains]);
+  const persistentView = useMemo<FoldLensViewState>(() => ({
+    selectedId: prediction.id,
+    compareId: comparePrediction?.id,
+    visibleChains: visibleChainIds,
+    colorMode,
+    brightness,
+    surface,
+    surfaceOnly,
+    focusMode,
+    selectedDomainId,
+    selection,
+    mobileTab,
+    inspectorTab,
+  }), [brightness, colorMode, comparePrediction?.id, focusMode, inspectorTab, mobileTab, prediction.id, selectedDomainId, selection, surface, surfaceOnly, visibleChainIds]);
+
+  useEffect(() => {
+    let active = true;
+    void loadRecentSummary().then((summary) => { if (active) setRecentSession(summary); });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!workspaceOpen || result.isDemo) return;
+    void saveRecentResult(result).catch(() => {
+      if (persistenceWarningShown.current) return;
+      persistenceWarningShown.current = true;
+      setToast('This analysis is open, but the browser could not save it for next time.');
+      window.setTimeout(() => setToast(undefined), 4200);
+    });
+  }, [result, workspaceOpen]);
+
+  useEffect(() => {
+    if (!workspaceOpen || result.isDemo) return;
+    const resultKey = resultStorageKey(result);
+    const delay = persistedViewResult.current === resultKey ? 650 : 0;
+    const timeout = window.setTimeout(() => {
+      void saveRecentView(result, persistentView).then((summary) => {
+        persistedViewResult.current = resultKey;
+        setRecentSession(summary);
+      }).catch(() => {
+        if (persistenceWarningShown.current) return;
+        persistenceWarningShown.current = true;
+        setToast('Your latest view could not be saved for next time.');
+        window.setTimeout(() => setToast(undefined), 4200);
+      });
+    }, delay);
+    return () => window.clearTimeout(timeout);
+  }, [persistentView, result, workspaceOpen]);
 
   useEffect(() => {
     const warm = () => { if (document.visibilityState === 'visible') void fetch('/api/health', { cache: 'no-store' }).catch(() => undefined); };
@@ -118,31 +173,62 @@ export default function App() {
     }
   };
 
+  const applyResult = (nextResult: AF3Result, view?: FoldLensViewState) => {
+    const defaultId = nextResult.predictions[0].id;
+    const selected = nextResult.predictions.some((item) => item.id === view?.selectedId) ? view!.selectedId : defaultId;
+    const allChainIds = nextResult.chains.map((chain) => chain.id);
+    const visible = restoredVisibleChainIds(allChainIds, view?.visibleChains);
+    setResult(nextResult);
+    setSelectedId(selected);
+    setCompareId(nextResult.predictions.some((item) => item.id === view?.compareId && item.id !== selected) ? view?.compareId : undefined);
+    setVisibleChains(new Set(visible));
+    const selectedPrediction = nextResult.predictions.find((item) => item.id === selected) ?? nextResult.predictions[0];
+    const selectedHasPlddt = Boolean(selectedPrediction.confidence?.tokenPlddts?.some(Number.isFinite));
+    setColorMode(view?.colorMode === 'confidence' && selectedHasPlddt ? 'confidence' : 'chains');
+    setBrightness(Math.min(140, Math.max(60, view?.brightness ?? 100)));
+    setSelection(view?.selection ?? null);
+    setSurface(view?.surface ?? false);
+    setSurfaceOnly(view?.surfaceOnly ?? false);
+    setFocusMode(view?.focusMode ?? 'all');
+    setSelectedDomainId(view?.selectedDomainId);
+    setMobileTab(view?.mobileTab ?? 'structure');
+    setInspectorTab(view?.inspectorTab ?? 'ask');
+    setWorkspaceOpen(true);
+  };
+
   const confirmImport = () => {
     if (!pendingResult) return;
-    const defaultId = pendingResult.predictions[0].id;
-    const selected = pendingResult.predictions.some((item) => item.id === pendingView?.selectedId) ? pendingView!.selectedId : defaultId;
-    const allChainIds = pendingResult.chains.map((chain) => chain.id);
-    const visible = restoredVisibleChainIds(allChainIds, pendingView?.visibleChains);
-    setResult(pendingResult);
-    setSelectedId(selected);
-    setCompareId(pendingResult.predictions.some((item) => item.id === pendingView?.compareId && item.id !== selected) ? pendingView?.compareId : undefined);
-    setVisibleChains(new Set(visible));
-    const selectedPrediction = pendingResult.predictions.find((item) => item.id === selected) ?? pendingResult.predictions[0];
-    const selectedHasPlddt = Boolean(selectedPrediction.confidence?.tokenPlddts?.some(Number.isFinite));
-    setColorMode(pendingView?.colorMode === 'confidence' && selectedHasPlddt ? 'confidence' : 'chains');
-    setBrightness(Math.min(140, Math.max(60, pendingView?.brightness ?? 100)));
-    setSelection(pendingView?.selection ?? null);
-    setSurface(pendingView?.surface ?? false);
-    setSurfaceOnly(pendingView?.surfaceOnly ?? false);
-    setFocusMode(pendingView?.focusMode ?? 'all');
-    setSelectedDomainId(pendingView?.selectedDomainId);
+    applyResult(pendingResult, pendingView);
     setPendingResult(undefined);
     setPendingView(undefined);
     setDialogOpen(false);
-    setWorkspaceOpen(true);
     setToast(`${pendingResult.predictions.length} prediction${pendingResult.predictions.length === 1 ? '' : 's'} opened locally`);
     window.setTimeout(() => setToast(undefined), 3200);
+  };
+
+  const resumeRecentSession = async () => {
+    setResumeBusy(true);
+    try {
+      const session = await loadRecentSession();
+      if (!session) {
+        setRecentSession(null);
+        setToast('The previous analysis is no longer available on this device.');
+        window.setTimeout(() => setToast(undefined), 3600);
+        return;
+      }
+      applyResult(session.result, session.view);
+      setToast('Previous analysis restored');
+      window.setTimeout(() => setToast(undefined), 2800);
+    } finally {
+      setResumeBusy(false);
+    }
+  };
+
+  const forgetRecentSession = async () => {
+    await clearRecentSession();
+    setRecentSession(null);
+    setToast('Saved analysis removed from this browser');
+    window.setTimeout(() => setToast(undefined), 2800);
   };
 
   const openDemo = async () => {
@@ -160,6 +246,8 @@ export default function App() {
       setFocusMode('all');
       setSelectedDomainId(undefined);
       setSelection(null);
+      setMobileTab('structure');
+      setInspectorTab('ask');
       setWorkspaceOpen(true);
     } catch {
       setToast('The sample structure could not be loaded. Open a local AF3 result to continue.');
@@ -169,10 +257,12 @@ export default function App() {
     }
   };
 
-  const toggleChain = (id: string) => {
+  const setChainVisibility = (ids: string[], visible: boolean) => {
     setVisibleChains((current) => {
       const next = new Set(current);
-      if (next.has(id)) next.delete(id); else next.add(id);
+      ids.forEach((id) => {
+        if (visible) next.add(id); else next.delete(id);
+      });
       return next;
     });
   };
@@ -239,7 +329,7 @@ export default function App() {
   };
 
   const saveSession = () => {
-    downloadSession(createSession(result, { selectedId: prediction.id, compareId: comparePrediction?.id, visibleChains: [...visibleChains], colorMode, brightness, surface, surfaceOnly, focusMode, selectedDomainId, selection }));
+    downloadSession(createSession(result, persistentView));
     setToast('Resumable FoldLens session saved');
     window.setTimeout(() => setToast(undefined), 3200);
   };
@@ -295,7 +385,7 @@ export default function App() {
       onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDragging(false); }}
       onDrop={(event) => { event.preventDefault(); setDragging(false); void openFiles(Array.from(event.dataTransfer.files)); }}
     >
-      {!workspaceOpen ? <WelcomeScreen demoBusy={demoBusy} onFiles={(files) => void openFiles(files)} onDemo={() => void openDemo()} /> : <>
+      {!workspaceOpen ? <WelcomeScreen demoBusy={demoBusy} recentSession={recentSession} resumeBusy={resumeBusy} onFiles={(files) => void openFiles(files)} onDemo={() => void openDemo()} onResume={() => void resumeRecentSession()} onForgetRecent={() => void forgetRecentSession()} /> : <>
       <AppHeader jobName={result.jobName} isDemo={result.isDemo} onOpen={showOpenDialog} onExportReport={exportReport} onSaveSession={saveSession} />
 
       <main className="desktop-workspace">
@@ -352,7 +442,7 @@ export default function App() {
               resetSignal={resetSignal}
             />
           </section>
-          <WorkspaceInspector prediction={prediction} chains={result.chains} visibleChains={visibleChains} onToggleChain={toggleChain} notices={result.notices} onAction={runEvidenceAction} />
+          <WorkspaceInspector tab={inspectorTab} onTabChange={setInspectorTab} prediction={prediction} chains={result.chains} visibleChains={visibleChains} onSetChainVisibility={setChainVisibility} notices={result.notices} onAction={runEvidenceAction} />
         </div>
         <PaeHeatmap
           pae={prediction.confidence?.pae}
@@ -422,10 +512,10 @@ export default function App() {
           {tabs.map((tab) => <button id={`mobile-tab-${tab.id}`} type="button" role="tab" aria-selected={mobileTab === tab.id} aria-controls={`mobile-panel-${tab.id}`} tabIndex={mobileTab === tab.id ? 0 : -1} className={mobileTab === tab.id ? 'active' : ''} key={tab.id} onClick={() => setMobileTab(tab.id)}>{tab.label}</button>)}
         </nav>
         <div className="mobile-tab-content">
-          <section id="mobile-panel-structure" role="tabpanel" aria-labelledby="mobile-tab-structure" hidden={mobileTab !== 'structure'}><Inspector summary={prediction.summary} chains={result.chains} visibleChains={visibleChains} onToggleChain={toggleChain} notices={result.notices} /></section>
+          <section id="mobile-panel-structure" role="tabpanel" aria-labelledby="mobile-tab-structure" hidden={mobileTab !== 'structure'}><Inspector summary={prediction.summary} chains={result.chains} visibleChains={visibleChains} onSetChainVisibility={setChainVisibility} notices={result.notices} /></section>
           <section id="mobile-panel-pae" role="tabpanel" aria-labelledby="mobile-tab-pae" hidden={mobileTab !== 'pae'}><PaeHeatmap pae={prediction.confidence?.pae} chainIds={prediction.confidence?.tokenChainIds} tokenResidues={prediction.confidence?.tokenResidues} selection={selection} selectionStats={analysisFacts.selection} onSelection={setSelection} selectionLabel={selectionLabel} primaryLabel={prediction.label} comparison={comparePrediction ? { label: comparePrediction.label, pae: comparePrediction.confidence?.pae, chainIds: comparePrediction.confidence?.tokenChainIds, tokenResidues: comparePrediction.confidence?.tokenResidues, selectionStats: comparisonFacts?.selection } : undefined} compact /></section>
           <section id="mobile-panel-models" role="tabpanel" aria-labelledby="mobile-tab-models" hidden={mobileTab !== 'models'}><PredictionRail predictions={result.predictions} selectedId={prediction.id} compareId={comparePrediction?.id} onSelect={selectPrediction} onCompare={setCompareId} onOpen={showOpenDialog} /></section>
-          <section id="mobile-panel-insights" role="tabpanel" aria-labelledby="mobile-tab-insights" hidden={mobileTab !== 'insights'}><WorkspaceInspector prediction={prediction} chains={result.chains} visibleChains={visibleChains} onToggleChain={toggleChain} notices={result.notices} onAction={runEvidenceAction} /></section>
+          <section id="mobile-panel-insights" role="tabpanel" aria-labelledby="mobile-tab-insights" hidden={mobileTab !== 'insights'}><WorkspaceInspector tab={inspectorTab} onTabChange={setInspectorTab} prediction={prediction} chains={result.chains} visibleChains={visibleChains} onSetChainVisibility={setChainVisibility} notices={result.notices} onAction={runEvidenceAction} /></section>
         </div>
         <button className="mobile-open" type="button" onClick={showOpenDialog}><Icon name="file" />Open another result</button>
       </main>

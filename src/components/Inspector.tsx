@@ -1,4 +1,5 @@
 import type { AF3Summary, ChainInfo } from '../types/af3';
+import { groupLigands } from '../lib/focusMode';
 import { Icon } from './Icon';
 
 function interpretation(summary: AF3Summary) {
@@ -24,14 +25,17 @@ type Props = {
   summary: AF3Summary;
   chains: ChainInfo[];
   visibleChains: Set<string>;
-  onToggleChain: (id: string) => void;
+  onSetChainVisibility: (ids: string[], visible: boolean) => void;
   notices?: string[];
   embedded?: boolean;
 };
 
-export function Inspector({ summary, chains, visibleChains, onToggleChain, notices = [], embedded = false }: Props) {
+export function Inspector({ summary, chains, visibleChains, onSetChainVisibility, notices = [], embedded = false }: Props) {
+  const structureChains = chains.filter((chain) => chain.kind !== 'ligand');
+  const ligandGroups = groupLigands(chains);
+  const ligandCount = ligandGroups.reduce((count, ligand) => count + ligand.count, 0);
   const matrix = summary.chainPairPaeMin ?? summary.chainPairIptm;
-  const matrixIds = (summary.chainIds ?? chains.filter((chain) => chain.kind !== 'ligand').map((chain) => chain.id)).slice(0, 4);
+  const matrixIds = (summary.chainIds ?? structureChains.map((chain) => chain.id)).slice(0, 4);
   const isPae = Boolean(summary.chainPairPaeMin);
 
   return (
@@ -42,12 +46,12 @@ export function Inspector({ summary, chains, visibleChains, onToggleChain, notic
         {notices.map((notice) => <small className="notice" key={notice}>{notice}</small>)}
       </section>
       <section className="chain-section">
-        <div className="section-title"><h2>Chains</h2><span>{chains.length}</span></div>
+        <div className="section-title"><h2>Chains</h2><span>{structureChains.length}</span></div>
         <div className="chain-list">
-          {chains.map((chain) => {
+          {structureChains.map((chain) => {
             const visible = visibleChains.has(chain.id);
             return (
-              <button type="button" className="chain-row" key={chain.id} onClick={() => onToggleChain(chain.id)} aria-pressed={visible}>
+              <button type="button" className="chain-row" key={chain.id} onClick={() => onSetChainVisibility([chain.id], !visible)} aria-pressed={visible}>
                 <Icon name={visible ? 'eye' : 'eyeOff'} />
                 <i style={{ '--chain-color': chain.color } as React.CSSProperties}>{chain.id}</i>
                 <span><strong>{chain.label}</strong>{chain.range && <small>Residues {chain.range}</small>}</span>
@@ -56,6 +60,21 @@ export function Inspector({ summary, chains, visibleChains, onToggleChain, notic
           })}
         </div>
       </section>
+      {ligandGroups.length > 0 && <section className="ligand-section">
+        <div className="section-title"><h2>Ligands</h2><span>{ligandCount}</span></div>
+        <div className="chain-list ligand-list">
+          {ligandGroups.map((ligand) => {
+            const visible = ligand.entityIds.every((id) => visibleChains.has(id));
+            return (
+              <button type="button" className="chain-row ligand-row" key={ligand.key} onClick={() => onSetChainVisibility(ligand.entityIds, !visible)} aria-pressed={visible}>
+                <Icon name={visible ? 'eye' : 'eyeOff'} />
+                <i title={ligand.code} style={{ '--chain-color': ligand.color } as React.CSSProperties}>{ligand.code.slice(0, 4)}</i>
+                <span><strong>{ligand.label}</strong><small>{ligand.count} {ligand.count === 1 ? 'instance' : 'instances'}</small></span>
+              </button>
+            );
+          })}
+        </div>
+      </section>}
       <section className="matrix-section">
         <div className="section-title"><h2>{isPae ? 'Chain-pair minimum PAE' : 'Chain-pair ipTM'}</h2><span>{isPae ? 'Å · lower is better' : 'higher is better'}</span></div>
         {matrix && matrixIds.length ? (

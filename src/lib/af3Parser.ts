@@ -11,9 +11,10 @@ const COMPRESSED_AF3_EXT = /\.(?:cif|mmcif|json|csv)\.zst$/i;
 const MAX_RELEVANT_BYTES = 256 * 1024 * 1024;
 const CHAIN_COLORS = ['#42bdf5', '#a9d94a', '#367de8', '#aa73df', '#f0b455', '#e4779d'];
 const NUCLEOTIDES = new Set(['A', 'C', 'G', 'U', 'T', 'DA', 'DC', 'DG', 'DT', 'DU']);
+const WATER_RESIDUES = new Set(['HOH', 'WAT', 'DOD']);
 const AUXILIARY_STRUCTURE_DIRS = new Set(['template', 'templates', 'msa', 'msas', '__macosx']);
 
-type EntityHint = Pick<ChainInfo, 'label' | 'kind' | 'range'>;
+type EntityHint = Pick<ChainInfo, 'label' | 'kind' | 'range' | 'ligandCodes' | 'sourceChainIds' | 'instanceCount'>;
 
 function fileStem(path: string) {
   return path.split('/').pop()!.replace(/\.(?:cif|mmcif|json|csv)$/i, '');
@@ -267,7 +268,10 @@ function entityHints(entries: JsonEntry[]): Map<string, EntityHint> {
         if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue;
         const entity = raw as Record<string, unknown>;
         const sequence = typeof entity.sequence === 'string' ? entity.sequence : undefined;
-        const ligandName = stringArray(entity.ccdCodes ?? entity.ccd_codes)?.join(', ')
+        const ligandCodes = stringArray(entity.ccdCodes ?? entity.ccd_codes)?.map((code) => code.replace(/^CCD_/i, ''))
+          ?? (typeof entity.ligand === 'string' ? [entity.ligand.replace(/^CCD_/i, '')] : undefined)
+          ?? (typeof entity.ion === 'string' ? [entity.ion] : undefined);
+        const ligandName = ligandCodes?.join(', ')
           ?? (typeof entity.ligand === 'string' ? entity.ligand.replace(/^CCD_/i, '') : undefined)
           ?? (typeof entity.ion === 'string' ? entity.ion : undefined)
           ?? (typeof entity.smiles === 'string' ? 'custom ligand' : undefined);
@@ -289,6 +293,9 @@ function entityHints(entries: JsonEntry[]): Map<string, EntityHint> {
             kind,
             label: kind === 'ligand' && ligandName ? `${name} · ${ligandName}` : `${name} · Chain ${id}`,
             range: sequence ? `1–${sequence.replace(/\s/g, '').length}` : undefined,
+            ligandCodes: kind === 'ligand' ? ligandCodes : undefined,
+            sourceChainIds: kind === 'ligand' ? [id] : undefined,
+            instanceCount: kind === 'ligand' && resolvedIds.length === 1 ? count : undefined,
           });
         }
       }
@@ -297,26 +304,62 @@ function entityHints(entries: JsonEntry[]): Map<string, EntityHint> {
   return result;
 }
 
-function cifEntityHints(cif: string, expectedChainIds?: string[]): Map<string, EntityHint> {
+function cifEntityHints(cif: string, expectedChainIds?: string[], knownLigandCodes = new Set<string>()): Map<string, EntityHint> {
   const parsed = parseCifTokens(cif, expectedChainIds);
   const byChain = new Map<string, TokenResidue[]>();
   parsed.residues.forEach((residue) => byChain.set(residue.chainId, [...(byChain.get(residue.chainId) ?? []), residue]));
   const result = new Map<string, EntityHint>();
   for (const [id, residues] of byChain) {
-    const uniqueResidues = new Set(residues.map((residue) => residue.residueId));
-    const names = residues.map((residue) => residue.residueName ?? '').filter(Boolean);
+    const meaningful = residues.filter((residue) => !WATER_RESIDUES.has((residue.residueName ?? '').toUpperCase()));
+    if (!meaningful.length) continue;
+    const polymerResidues = meaningful.filter((residue) => !residue.isHetero);
+    const classificationResidues = polymerResidues.length ? polymerResidues : meaningful;
+    const uniqueResidues = new Set(classificationResidues.map((residue) => residue.residueId));
+    const names = classificationResidues.map((residue) => residue.residueName ?? '').filter(Boolean);
     const nucleic = names.length > 0 && names.every((name) => NUCLEOTIDES.has(name.toUpperCase()));
-    const ligand = residues.every((residue) => residue.isHetero) || uniqueResidues.size <= 2 && residues.length > uniqueResidues.size * 2;
+    const ligand = polymerResidues.length === 0 && (classificationResidues.every((residue) => residue.isHetero) || uniqueResidues.size <= 2 && classificationResidues.length > uniqueResidues.size * 2);
     const kind: ChainInfo['kind'] = nucleic ? 'nucleic' : ligand ? 'ligand' : 'protein';
-    const numbers = residues.map((residue) => residue.residueNumber).filter((value): value is number => value !== undefined);
+    const ligandCodes = ligand ? [...new Set(names.map((name) => name.toUpperCase()))] : undefined;
+    const numbers = classificationResidues.map((residue) => residue.residueNumber).filter((value): value is number => value !== undefined);
     const range = numbers.length ? `${Math.min(...numbers)}–${Math.max(...numbers)}` : undefined;
-    result.set(id, { kind, label: `${nucleic ? 'Nucleic acid' : ligand ? 'Ligand' : 'Protein'} · Chain ${id}`, range });
+    result.set(id, {
+      kind,
+      label: ligand && ligandCodes?.length ? `Ligand · ${ligandCodes.join(', ')}` : `${nucleic ? 'Nucleic acid' : 'Protein'} · Chain ${id}`,
+      range: ligand ? undefined : range,
+      ligandCodes,
+      sourceChainIds: ligand ? [id] : undefined,
+      instanceCount: ligand ? uniqueResidues.size : undefined,
+    });
+  }
+
+  const occurrences = new Map<string, { instances: Set<string>; chainIds: Set<string> }>();
+  parsed.residues.filter((residue) => residue.isHetero && residue.residueName && !WATER_RESIDUES.has(residue.residueName.toUpperCase())).forEach((residue) => {
+    const code = residue.residueName!.toUpperCase();
+    const value = occurrences.get(code) ?? { instances: new Set<string>(), chainIds: new Set<string>() };
+    value.instances.add(`${residue.chainId}:${residue.residueId}`);
+    value.chainIds.add(residue.chainId);
+    occurrences.set(code, value);
+  });
+  const coveredCodes = new Set([
+    ...knownLigandCodes,
+    ...[...result.values()].flatMap((hint) => hint.ligandCodes ?? []),
+  ].map((code) => code.toUpperCase()));
+  for (const [code, occurrence] of occurrences) {
+    if (coveredCodes.has(code)) continue;
+    const id = `ligand:${code}`;
+    result.set(id, {
+      kind: 'ligand',
+      label: `Ligand · ${code}`,
+      ligandCodes: [code],
+      sourceChainIds: [...occurrence.chainIds],
+      instanceCount: occurrence.instances.size,
+    });
   }
   return result;
 }
 
 function inferChains(summary: AF3Summary, confidence: AF3Confidence | undefined, hints: Map<string, EntityHint>): ChainInfo[] {
-  const ids = summary.chainIds ?? [...new Set([...(confidence?.tokenChainIds ?? []), ...hints.keys()])];
+  const ids = [...new Set([...(summary.chainIds ?? confidence?.tokenChainIds ?? []), ...hints.keys()])];
   if (ids.length === 0) {
     return [
       { id: 'A', label: 'Chain A', kind: 'unknown', color: CHAIN_COLORS[0] },
@@ -324,7 +367,16 @@ function inferChains(summary: AF3Summary, confidence: AF3Confidence | undefined,
   }
   return ids.map((id, index) => {
     const hint = hints.get(id);
-    return { id, label: hint?.label ?? `Chain ${id}`, kind: hint?.kind ?? 'unknown', range: hint?.range, color: CHAIN_COLORS[index % CHAIN_COLORS.length] };
+    return {
+      id,
+      label: hint?.label ?? `Chain ${id}`,
+      kind: hint?.kind ?? 'unknown',
+      range: hint?.range,
+      ligandCodes: hint?.ligandCodes,
+      sourceChainIds: hint?.sourceChainIds,
+      instanceCount: hint?.instanceCount,
+      color: CHAIN_COLORS[index % CHAIN_COLORS.length],
+    };
   });
 }
 
@@ -411,7 +463,8 @@ export function parseEntries(entries: TextEntry[], sourceName: string): AF3Resul
   if (auxiliaryCifs.length) notices.push(`${auxiliaryCifs.length} auxiliary template structure ${auxiliaryCifs.length === 1 ? 'file was' : 'files were'} skipped.`);
   if (predictions.length > 12) notices.push(`Showing the top 12 of ${predictions.length} predictions by ranking score.`);
   const hints = entityHints(jsonEntries);
-  const inferred = cifEntityHints(top.cif, top.summary.chainIds ?? top.confidence?.tokenChainIds);
+  const knownLigandCodes = new Set([...hints.values()].flatMap((hint) => hint.ligandCodes ?? []).map((code) => code.toUpperCase()));
+  const inferred = cifEntityHints(top.cif, top.summary.chainIds ?? top.confidence?.tokenChainIds, knownLigandCodes);
   for (const [id, hint] of inferred) if (!hints.has(id)) hints.set(id, hint);
 
   return {

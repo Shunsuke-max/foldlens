@@ -3,7 +3,7 @@ import type { SVGProps } from 'react';
 export type IconName =
   | 'folder' | 'upload' | 'more' | 'palette' | 'link' | 'surface' | 'reset'
   | 'eye' | 'eyeOff' | 'check' | 'info' | 'expand' | 'lock' | 'molecule'
-  | 'file' | 'close' | 'chevron' | 'layers' | 'brightness';
+  | 'file' | 'close' | 'chevron' | 'layers' | 'brightness' | 'history';
 
 const paths: Record<IconName, React.ReactNode> = {
   folder: <path d="M3 6.75h6l1.8 2.1H21v9.4a1.75 1.75 0 0 1-1.75 1.75H4.75A1.75 1.75 0 0 1 3 18.25V6.75Z" />,
@@ -25,6 +25,7 @@ const paths: Record<IconName, React.ReactNode> = {
   chevron: <path d="m8 10 4 4 4-4" />,
   layers: <><path d="m12 3 9 5-9 5-9-5 9-5Z" /><path d="m3 12 9 5 9-5M3 16l9 5 9-5" /></>,
   brightness: <><circle cx="12" cy="12" r="3.5" /><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M18.7 5.3l-1.4 1.4M6.7 17.3l-1.4 1.4" /></>,
+  history: <><path d="M4.5 8V4.5H8" /><path d="M5 5a8.5 8.5 0 1 1-1.2 9.4" /><path d="M12 7.5V12l3 2" /></>,
 };
 
 export function Icon({ name, size = 20, ...props }: SVGProps<SVGSVGElement> & { name: IconName; size?: number }) {

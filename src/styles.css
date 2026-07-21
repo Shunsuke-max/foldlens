@@ -51,6 +51,17 @@ button { color: inherit; }
 .welcome-intro li strong { min-width: 76px; font-size: 11px; }
 .welcome-intro li small { color: var(--faint); font-size: 10px; }
 .welcome-open-card { position: relative; padding: 30px; border: 1px solid var(--line-strong); border-radius: 14px; background: rgba(10,24,35,.9); box-shadow: 0 28px 80px rgba(0,0,0,.28); }
+.welcome-resume { margin-bottom: 4px; padding: 16px; display: grid; grid-template-columns: 38px minmax(0,1fr); gap: 4px 12px; border: 1px solid rgba(66,189,245,.34); border-radius: 10px; background: linear-gradient(135deg, rgba(66,189,245,.1), rgba(14,36,52,.7)); box-shadow: inset 0 1px rgba(255,255,255,.025); }
+.welcome-resume-icon { grid-row: 1 / span 3; width: 38px; height: 38px; display: grid; place-items: center; border-radius: 8px; color: var(--cyan); background: rgba(66,189,245,.1); }
+.welcome-resume-eyebrow { align-self: end; color: var(--cyan); font: 700 8px ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .11em; }
+.welcome-resume h2 { overflow: hidden; font-size: 16px; text-overflow: ellipsis; white-space: nowrap; }
+.welcome-resume p { margin: 1px 0 0; color: var(--muted); font-size: 9px; }
+.welcome-resume p strong { color: var(--text); }
+.welcome-resume-actions { grid-column: 1 / -1; margin-top: 10px; display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 8px; }
+.welcome-resume-actions .button { min-height: 38px; }
+.welcome-resume-actions .ghost { padding-inline: 12px; border-color: transparent; background: transparent; color: var(--muted); }
+.welcome-resume-actions .ghost:hover:not(:disabled) { color: var(--text); background: rgba(255,255,255,.035); }
+.welcome-resume-divider { margin-block: 3px 5px; }
 .welcome-open-icon { width: 48px; height: 48px; margin-bottom: 22px; display: grid; place-items: center; border: 1px solid rgba(66,189,245,.35); border-radius: 10px; color: var(--cyan); background: rgba(66,189,245,.08); }
 .welcome-step { position: absolute; top: 31px; right: 29px; color: var(--faint); font: 700 8px ui-monospace,monospace; letter-spacing: .12em; }
 .welcome-open-card h2 { margin: 0; font-size: 20px; letter-spacing: -.025em; }
@@ -388,6 +399,10 @@ button { color: inherit; }
 .chain-row strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; font-weight: 550; }
 .chain-row small { color: var(--faint); font-size: 9px; white-space: nowrap; }
 .chain-row[aria-pressed="false"] { opacity: .45; }
+.ligand-section .section-title { color: #ead9b7; }
+.ligand-list { border-top-color: rgba(240,180,85,.24); }
+.ligand-row > i { width: auto; min-width: 28px; padding: 0 4px; border: 1px solid rgba(240,180,85,.3); background: color-mix(in srgb, var(--chain-color), transparent 58%); color: #fff2d6; font-size: 8px; letter-spacing: .02em; }
+.ligand-row strong { color: #f0dfbd; }
 
 .matrix-section { padding-bottom: 12px; }
 .matrix-wrap { padding: 0 14px; }
@@ -575,6 +590,8 @@ button { color: inherit; }
   .welcome-intro ul { margin-top: 24px; }
   .welcome-intro li span { align-items: flex-start; flex-direction: column; gap: 2px; }
   .welcome-open-card { padding: 24px 20px; }
+  .welcome-resume { padding: 14px; }
+  .welcome-resume-actions { grid-template-columns: minmax(0,1fr) auto; }
   .welcome-step { top: 26px; right: 20px; }
   .app-header { position: sticky; top: 0; grid-template-columns: auto minmax(0,1fr) 44px; background: rgba(7,19,29,.96); backdrop-filter: blur(12px); }
   .brand { border: 0; padding: 0 14px; gap: 8px; }

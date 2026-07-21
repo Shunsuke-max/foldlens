@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties } from 'react';
 import type { AF3Confidence, ChainInfo, DomainRegion, FocusMode, ResidueRange } from '../types/af3';
-import type { LigandFocus } from '../lib/focusMode';
+import { ligandFocusFromChains, type LigandFocus } from '../lib/focusMode';
 import { DomainLegend } from './DomainLegend';
 import type { ColorMode } from './ViewerToolbar';
 
@@ -49,14 +49,56 @@ function interfaceSelections(interfaceChains?: [string, string]) {
 }
 
 function pocketSelections(ligandFocus?: LigandFocus) {
-  if (!ligandFocus?.chainIds.length && !ligandFocus?.residueNames.length) return null;
+  if (!ligandFocus?.structureChainIds.length && !ligandFocus?.residueNames.length) return null;
   const identifiers = [
-    ...ligandFocus.chainIds.map((chain) => ({ chain })),
+    ...ligandFocus.structureChainIds.map((chain) => ({ chain })),
     ...ligandFocus.residueNames.map((resn) => ({ resn })),
   ];
   const target = { model: 0, hetflag: true, not: { resn: WATER_RESIDUES }, or: identifiers };
   const residues = { model: 0, hetflag: false, byres: true, within: { distance: 5, sel: target } };
   return { target, residues, zoom: { or: [target, residues] } };
+}
+
+type LigandAtom = {
+  x?: number;
+  y?: number;
+  z?: number;
+  chain?: string;
+  resi?: number | string;
+  resn?: string;
+};
+
+function addLigandLabels(viewer: any, atoms: LigandAtom[]) {
+  const groups = new Map<string, LigandAtom[]>();
+  atoms.forEach((atom) => {
+    if (!atom.resn || WATER_RESIDUES.includes(atom.resn.toUpperCase())) return;
+    const key = `${atom.resn}:${atom.chain ?? ''}:${atom.resi ?? ''}`;
+    groups.set(key, [...(groups.get(key) ?? []), atom]);
+  });
+  [...groups.values()].slice(0, 12).forEach((group) => {
+    const positioned = group.filter((atom) => Number.isFinite(atom.x) && Number.isFinite(atom.y) && Number.isFinite(atom.z));
+    if (!positioned.length) return;
+    const anchor = positioned[0];
+    const position = positioned.reduce<{ x: number; y: number; z: number }>((center, atom) => ({
+      x: center.x + Number(atom.x) / positioned.length,
+      y: center.y + Number(atom.y) / positioned.length,
+      z: center.z + Number(atom.z) / positioned.length,
+    }), { x: 0, y: 0, z: 0 });
+    const location = anchor.chain || anchor.resi !== undefined ? ` · ${anchor.chain ?? ''}${anchor.resi !== undefined ? `:${anchor.resi}` : ''}` : '';
+    viewer.addLabel(`${anchor.resn}${location}`, {
+      position,
+      font: 'sans-serif',
+      fontSize: 11,
+      fontColor: '#fff2d6',
+      backgroundColor: '#111c23',
+      backgroundOpacity: 0.88,
+      borderColor: '#f0b455',
+      borderOpacity: 0.78,
+      borderThickness: 1,
+      padding: 3,
+      inFront: true,
+    }, undefined, true);
+  });
 }
 
 function domainSelection(domain: DomainRegion) {
@@ -112,7 +154,11 @@ export function MoleculeViewer({ cif, confidence, compareCif, compareLabel, chai
     () => interfaceSelections(interfaceChainA && interfaceChainB ? [interfaceChainA, interfaceChainB] : undefined),
     [interfaceChainA, interfaceChainB],
   );
-  const pocketFocus = useMemo(() => pocketSelections(ligandFocus), [ligandFocus]);
+  const visibleLigandFocus = useMemo(
+    () => ligandFocusFromChains(chains.filter((chain) => visibleChains.has(chain.id))),
+    [chains, visibleChains],
+  );
+  const pocketFocus = useMemo(() => pocketSelections(visibleLigandFocus), [visibleLigandFocus]);
 
   const summarizeFocus = useCallback((atoms: Array<{ chain?: string; resi?: number | string }>) => {
     const residues = new Map<string, { chain: string; residue: number | string }>();
@@ -141,6 +187,7 @@ export function MoleculeViewer({ cif, confidence, compareCif, compareLabel, chai
     const focusedInterfaceChains = new Set([interfaceChainA, interfaceChainB].filter((chain): chain is string => Boolean(chain)));
     try {
     viewer.removeAllSurfaces();
+    viewer.removeAllLabels();
     setSurfaceStatus(surface ? 'building' : 'idle');
     viewer.setStyle({}, {});
     chains.filter((chain) => chain.kind !== 'ligand' && visibleChains.has(chain.id)).forEach((chain, index) => {
@@ -159,9 +206,9 @@ export function MoleculeViewer({ cif, confidence, compareCif, compareLabel, chai
       }
     });
     viewer.setStyle({ model: 0, hetflag: true }, {});
-    const ligandVisible = chains.some((chain) => chain.kind === 'ligand' && visibleChains.has(chain.id));
-    if (ligandVisible && pocketFocus) {
+    if (pocketFocus) {
       viewer.setStyle(pocketFocus.target, { stick: { radius: 0.2, colorscheme: 'Jmol' }, sphere: { scale: 0.22, colorscheme: 'Jmol' } });
+      addLigandLabels(viewer, viewer.selectedAtoms(pocketFocus.target));
     }
     if (focusMode === 'interface' && interfaceFocus && !hideCartoon) {
       viewer.setStyle(interfaceFocus.residues, {
@@ -367,7 +414,7 @@ export function MoleculeViewer({ cif, confidence, compareCif, compareLabel, chai
         </div>}
       </div>}
       {(focusMode === 'interface' || focusMode === 'pocket') && <div className="focus-readout" role="status" aria-live="polite">
-        <span><i />{focusMode === 'interface' ? `Interface ${interfaceChains?.join('–') ?? ''}` : `Ligand pocket · ${ligandFocus?.label ?? 'ligand'}`}</span>
+        <span><i />{focusMode === 'interface' ? `Interface ${interfaceChains?.join('–') ?? ''}` : `Ligand pocket · ${visibleLigandFocus.label ?? ligandFocus?.label ?? 'ligand'}`}</span>
         <strong>{focusDetails?.residueCount ?? 0} contact residues</strong>
         <small>
           ≤5 Å geometry

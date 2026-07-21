@@ -65,7 +65,8 @@ export const demoResult: AF3Result = {
     { id: 'Q', label: 'KRAS · allosteric', kind: 'protein', color: '#a9d94a', range: '1–166' },
     { id: 'R', label: 'KRAS · active site', kind: 'protein', color: '#42bdf5', range: '1–166' },
     { id: 'S', label: 'SOS1', kind: 'protein', color: '#367de8', range: '564–1049' },
-    { id: 'L', label: 'Ligand · GNP', kind: 'ligand', color: '#aa73df' },
+    { id: 'ligand:GNP', label: 'Ligand · GNP', kind: 'ligand', color: '#aa73df', ligandCodes: ['GNP'], sourceChainIds: ['Q'], instanceCount: 1 },
+    { id: 'ligand:MG', label: 'Ion · MG', kind: 'ligand', color: '#f0b455', ligandCodes: ['MG'], sourceChainIds: ['Q'], instanceCount: 1 },
   ],
   domainAnnotations: [
     { id: 'q-ras-g', label: 'Ras G domain', chainId: 'Q', start: 1, end: 166, source: 'provided' },

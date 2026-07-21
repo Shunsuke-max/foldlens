@@ -1,13 +1,24 @@
 import { useRef } from 'react';
 import { BrandMark, Icon } from './Icon';
+import type { RecentSessionSummary } from '../lib/sessionStore';
 
 type Props = {
   demoBusy: boolean;
+  recentSession: RecentSessionSummary | null;
+  resumeBusy: boolean;
   onFiles: (files: File[]) => void;
   onDemo: () => void;
+  onResume: () => void;
+  onForgetRecent: () => void;
 };
 
-export function WelcomeScreen({ demoBusy, onFiles, onDemo }: Props) {
+function savedLabel(savedAt: string) {
+  const date = new Date(savedAt);
+  if (Number.isNaN(date.getTime())) return 'Saved locally';
+  return `Saved ${new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date)}`;
+}
+
+export function WelcomeScreen({ demoBusy, recentSession, resumeBusy, onFiles, onDemo, onResume, onForgetRecent }: Props) {
   const fileInput = useRef<HTMLInputElement>(null);
   const folderInput = useRef<HTMLInputElement>(null);
 
@@ -37,6 +48,19 @@ export function WelcomeScreen({ demoBusy, onFiles, onDemo }: Props) {
         </section>
 
         <section className="welcome-open-card" aria-labelledby="welcome-open-title">
+          {recentSession && <div className="welcome-resume" aria-labelledby="welcome-resume-title">
+            <div className="welcome-resume-icon"><Icon name="history" size={22} /></div>
+            <span className="welcome-resume-eyebrow">CONTINUE PREVIOUS ANALYSIS</span>
+            <h2 id="welcome-resume-title">{recentSession.jobName}</h2>
+            <p><strong>{recentSession.predictionCount}</strong> prediction{recentSession.predictionCount === 1 ? '' : 's'} · <time dateTime={recentSession.savedAt}>{savedLabel(recentSession.savedAt)}</time></p>
+            <div className="welcome-resume-actions">
+              <button className="button primary" type="button" onClick={onResume} disabled={resumeBusy}>
+                <Icon name="history" />{resumeBusy ? 'Restoring…' : 'Continue analysis'}
+              </button>
+              <button className="button ghost" type="button" onClick={onForgetRecent} disabled={resumeBusy}>Forget</button>
+            </div>
+          </div>}
+          {recentSession && <div className="welcome-divider welcome-resume-divider"><span>or open another result</span></div>}
           <div className="welcome-open-icon"><Icon name="folder" size={28} /></div>
           <span className="welcome-step">STEP 1</span>
           <h2 id="welcome-open-title">Open an AlphaFold 3 result</h2>

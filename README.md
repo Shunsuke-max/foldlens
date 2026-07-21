@@ -18,6 +18,7 @@ FoldLens keeps that review loop in one workspace. It does not claim that confide
 - Match structures to summary confidence and full PAE data automatically.
 - Rotate and zoom the 3D structure, switch samples, and compare ranking score, ipTM, pTM, and clash status.
 - Toggle chains, confidence/chain coloring, molecular surface, and focused interface, pocket, or predicted-region views.
+- Inspect detected ligands and ions in a dedicated list, toggle equivalent copies together, and see CCD labels anchored in 3D.
 - Select the PAE heatmap and highlight the corresponding chain or residue range in 3D.
 - Ask FoldLens a question and receive a short GPT-5.6 interpretation grounded only in deterministic facts extracted from the loaded result.
 - Act on cited evidence with controls such as **Show interface** and **Show residues**.
