@@ -15,6 +15,7 @@ import { WelcomeScreen } from './components/WelcomeScreen';
 import { Icon } from './components/Icon';
 import { buildAnalysisFacts, interfaceSelection, rangesSelection, selectionResidueRanges } from './lib/analysis';
 import { parseFiles } from './lib/af3Parser';
+import { clampStructureBrightness } from './lib/brightness';
 import { buildHtmlReport, createPaeSnapshot, createSession, downloadHtmlReport, downloadSession, parseSessionFile } from './lib/export';
 import { demoResult, loadDemoResult } from './lib/demo';
 import { inferDomains } from './lib/domains';
@@ -185,7 +186,7 @@ export default function App() {
     const selectedPrediction = nextResult.predictions.find((item) => item.id === selected) ?? nextResult.predictions[0];
     const selectedHasPlddt = Boolean(selectedPrediction.confidence?.tokenPlddts?.some(Number.isFinite));
     setColorMode(view?.colorMode === 'confidence' && selectedHasPlddt ? 'confidence' : 'chains');
-    setBrightness(Math.min(140, Math.max(60, view?.brightness ?? 100)));
+    setBrightness(clampStructureBrightness(view?.brightness ?? 100));
     setSelection(view?.selection ?? null);
     setSurface(view?.surface ?? false);
     setSurfaceOnly(view?.surfaceOnly ?? false);

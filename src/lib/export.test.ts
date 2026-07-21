@@ -8,11 +8,14 @@ afterEach(() => vi.restoreAllMocks());
 
 describe('FoldLens exports', () => {
   it('creates a versioned resumable session', () => {
-    const session = createSession(demoResult, { selectedId: 'demo-1', visibleChains: ['Q', 'S'], colorMode: 'chains', brightness: 120, surface: true, surfaceOnly: true, selection: null });
+    const session = createSession(demoResult, { selectedId: 'demo-1', visibleChains: ['Q', 'S'], colorMode: 'chains', brightness: 200, surface: true, surfaceOnly: true, selection: null });
     expect(session).toMatchObject({ format: 'foldlens-session', version: 1 });
     expect(session.view.visibleChains).toEqual(['Q', 'S']);
     expect(session.view.surfaceOnly).toBe(true);
-    expect(session.view.brightness).toBe(120);
+    expect(session.view.brightness).toBe(200);
+    expect(isSession(session)).toBe(true);
+    session.view.brightness = 205;
+    expect(isSession(session)).toBe(false);
   });
 
   it('builds a self-contained confidence report with scoped metrics and caveats', () => {

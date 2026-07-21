@@ -1,4 +1,5 @@
 import { Icon } from './Icon';
+import { MAX_STRUCTURE_BRIGHTNESS, MIN_STRUCTURE_BRIGHTNESS } from '../lib/brightness';
 
 export type ColorMode = 'confidence' | 'chains';
 
@@ -22,6 +23,7 @@ type BrightnessControlProps = {
 };
 
 export function BrightnessControl({ brightness, onBrightness }: BrightnessControlProps) {
+  const presets = [100, 150, MAX_STRUCTURE_BRIGHTNESS];
   return (
     <details className="viewer-brightness">
       <summary aria-label={`Adjust structure brightness, currently ${brightness}%`} title="Structure brightness">
@@ -34,8 +36,8 @@ export function BrightnessControl({ brightness, onBrightness }: BrightnessContro
           <output>{brightness}%</output>
           <input
             type="range"
-            min="60"
-            max="140"
+            min={MIN_STRUCTURE_BRIGHTNESS}
+            max={MAX_STRUCTURE_BRIGHTNESS}
             step="5"
             value={brightness}
             aria-label="Structure brightness"
@@ -43,6 +45,17 @@ export function BrightnessControl({ brightness, onBrightness }: BrightnessContro
             onChange={(event) => onBrightness(Number(event.currentTarget.value))}
           />
         </label>
+        <div className="viewer-brightness-presets" role="group" aria-label="Structure brightness presets">
+          {presets.map((value) => (
+            <button
+              key={value}
+              type="button"
+              aria-label={`Set structure brightness to ${value}%`}
+              aria-pressed={brightness === value}
+              onClick={() => onBrightness(value)}
+            >{value}%</button>
+          ))}
+        </div>
         <button type="button" aria-label="Reset brightness" disabled={brightness === 100} onClick={() => onBrightness(100)}>Reset to 100%</button>
       </div>
     </details>

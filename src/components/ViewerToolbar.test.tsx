@@ -40,8 +40,11 @@ describe('ViewerToolbar', () => {
     const onBrightness = vi.fn();
     render(<ViewerToolbar colorMode="chains" surface={false} brightness={115} onColorMode={vi.fn()} onSurface={vi.fn()} onBrightness={onBrightness} onReset={vi.fn()} onExpand={vi.fn()} />);
 
-    fireEvent.change(screen.getByRole('slider', { name: 'Structure brightness' }), { target: { value: '130' } });
-    expect(onBrightness).toHaveBeenCalledWith(130);
+    fireEvent.change(screen.getByRole('slider', { name: 'Structure brightness' }), { target: { value: '200' } });
+    expect(onBrightness).toHaveBeenCalledWith(200);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Set structure brightness to 200%' }));
+    expect(onBrightness).toHaveBeenLastCalledWith(200);
 
     fireEvent.click(screen.getByRole('button', { name: 'Reset brightness' }));
     expect(onBrightness).toHaveBeenCalledWith(100);

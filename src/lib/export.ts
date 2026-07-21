@@ -1,5 +1,6 @@
 import type { AF3Result, FoldLensSession, FoldLensViewState, Prediction } from '../types/af3';
 import type { AnalysisFacts } from '../types/analysis';
+import { MAX_STRUCTURE_BRIGHTNESS, MIN_STRUCTURE_BRIGHTNESS } from './brightness';
 
 const safeName = (value: string) => value.replace(/[^a-z0-9]+/gi, '_').replace(/^_+|_+$/g, '').toLowerCase() || 'alphafold_result';
 
@@ -141,7 +142,7 @@ export function isSession(value: unknown): value is FoldLensSession {
   if (!view.visibleChains.every((id) => knownChains.has(id))) return false;
   const domainIds = new Set(result.domainAnnotations?.map((domain) => domain.id) ?? []);
   if (result.domainAnnotations?.some((domain) => !knownChains.has(domain.chainId)) || view.selectedDomainId !== undefined && !domainIds.has(view.selectedDomainId)) return false;
-  if (!finiteOptional(view.brightness) || view.brightness !== undefined && (view.brightness < 60 || view.brightness > 140)) return false;
+  if (!finiteOptional(view.brightness) || view.brightness !== undefined && (view.brightness < MIN_STRUCTURE_BRIGHTNESS || view.brightness > MAX_STRUCTURE_BRIGHTNESS)) return false;
   if (view.selection !== null) {
     if (!isRecord(view.selection)) return false;
     const size = prediction.confidence?.pae?.length ?? prediction.confidence?.tokenResidues?.length ?? prediction.confidence?.tokenChainIds?.length ?? 0;

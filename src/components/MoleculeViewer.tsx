@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties } from 'react';
 import type { AF3Confidence, ChainInfo, DomainRegion, FocusMode, ResidueRange } from '../types/af3';
+import { clampStructureBrightness } from '../lib/brightness';
 import { ligandFocusFromChains, type LigandFocus } from '../lib/focusMode';
 import { DomainLegend } from './DomainLegend';
 import type { ColorMode } from './ViewerToolbar';
@@ -37,7 +38,7 @@ type FocusDetails = {
 const WATER_RESIDUES = ['HOH', 'WAT', 'DOD'];
 const EMPTY_DOMAINS: DomainRegion[] = [];
 const SURFACE_OVERLAY_OPACITY = 0.46;
-const SURFACE_ONLY_OPACITY = 0.78;
+const SURFACE_ONLY_OPACITY = 1;
 
 function interfaceSelections(interfaceChains?: [string, string]) {
   if (!interfaceChains) return null;
@@ -395,7 +396,7 @@ export function MoleculeViewer({ cif, confidence, compareCif, compareLabel, chai
         aria-label="Interactive three-dimensional molecular structure"
         aria-describedby={instructionsId}
         onKeyDown={handleViewerKeyDown}
-        style={{ '--structure-brightness': `${Math.min(140, Math.max(60, brightness))}%` } as CSSProperties}
+        style={{ '--structure-brightness': `${clampStructureBrightness(brightness)}%` } as CSSProperties}
       />
       <span className="sr-only" id={instructionsId}>Use arrow keys to rotate, plus and minus to zoom, and Home to reset the structure view.</span>
       {renderStatus && <div className={`viewer-loading ${renderStatus === 'model' ? 'initial' : 'overlay'}`} role="status" aria-live="polite">

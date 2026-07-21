@@ -232,6 +232,9 @@ button { color: inherit; }
 .viewer-brightness-popover button { min-height: 28px; padding: 0 9px; border: 1px solid var(--line); border-radius: 5px; background: transparent; color: var(--muted); font-size: 9px; cursor: pointer; }
 .viewer-brightness-popover button:hover:not(:disabled) { border-color: rgba(66,189,245,.5); color: var(--text); background: rgba(66,189,245,.07); }
 .viewer-brightness-popover button:disabled { opacity: .42; cursor: default; }
+.viewer-brightness-presets { display: grid; grid-template-columns: repeat(3,1fr); gap: 6px; }
+.viewer-brightness-presets button { padding-inline: 4px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.viewer-brightness-presets button[aria-pressed="true"] { border-color: var(--cyan); color: var(--cyan); background: rgba(66,189,245,.1); }
 
 .score-strip {
   position: absolute;
