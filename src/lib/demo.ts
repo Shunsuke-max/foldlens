@@ -39,7 +39,7 @@ export const demoResult: AF3Result = {
   sourceName: 'FoldLens demo',
   predictions: scores.map((score, index) => ({
     id: `demo-${index + 1}`,
-    label: `Model ${index + 1}`,
+    label: `Illustrative variant ${index + 1}`,
     path: `demo/model_${index + 1}.cif`,
     cif: '',
     summary: {
@@ -73,7 +73,7 @@ export const demoResult: AF3Result = {
     { id: 's-rem', label: 'REM domain', chainId: 'S', start: 564, end: 741, source: 'provided' },
     { id: 's-cdc25', label: 'CDC25 domain', chainId: 'S', start: 742, end: 1049, source: 'provided' },
   ],
-  notices: ['Demo structure: PDB 1NVV. Confidence values are illustrative.'],
+  notices: ['Demo structure: PDB 1NVV. All five entries reuse the same experimental coordinates; only the illustrative confidence values vary.'],
   isDemo: true,
 };
 

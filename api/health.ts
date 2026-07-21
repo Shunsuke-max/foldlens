@@ -27,7 +27,7 @@ export default async function handler(request: IncomingMessage, response: Server
   try {
     const upstream = await fetch(renderHealthEndpoint(), {
       headers: { Accept: 'application/json' },
-      signal: AbortSignal.timeout(55_000),
+      signal: AbortSignal.timeout(70_000),
     });
     response.statusCode = upstream.status;
     response.setHeader('Content-Type', upstream.headers.get('content-type') || 'application/json; charset=utf-8');

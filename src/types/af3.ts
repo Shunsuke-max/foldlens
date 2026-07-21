@@ -35,6 +35,7 @@ export type TokenResidue = {
   residueId: string;
   residueNumber?: number;
   residueName?: string;
+  isHetero?: boolean;
 };
 
 export type Prediction = {
@@ -88,6 +89,7 @@ export type FoldLensViewState = {
   compareId?: string;
   visibleChains: string[];
   colorMode: 'confidence' | 'chains';
+  brightness?: number;
   surface: boolean;
   surfaceOnly?: boolean;
   focusMode?: FocusMode;

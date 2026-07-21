@@ -6,6 +6,8 @@ import { Icon } from './Icon';
 type PaeComparison = {
   label: string;
   pae?: number[][];
+  chainIds?: string[];
+  tokenResidues?: TokenResidue[];
   selectionStats?: SelectionFact | null;
 };
 
@@ -70,15 +72,19 @@ export function PaeHeatmap({
   const [hover, setHover] = useState<{ x: number; y: number } | null>(null);
   const [mode, setMode] = useState<HeatmapMode>('primary');
   const instructionsId = useId();
-  const chainBoundaries = useMemo(() => boundaries(chainIds), [chainIds]);
-  const chainSegments = useMemo(() => (chainBoundaries.length ? chainBoundaries : [{ index: 0, id: 'Tokens' }]).map((chain, index, all) => ({ ...chain, end: (all[index + 1]?.index ?? (pae?.length ?? 1)) - 1 })), [chainBoundaries, pae?.length]);
-  const chainPairs = useMemo(() => chainSegments.flatMap((first, firstIndex) => chainSegments.slice(firstIndex + 1).map((second) => [first, second] as const)), [chainSegments]);
   const differencePae = useMemo(() => matrixDifference(pae, comparison?.pae), [comparison?.pae, pae]);
   const activeMode = comparison && (mode !== 'difference' || differencePae) ? mode : 'primary';
   const activePae = activeMode === 'comparison' ? comparison?.pae : activeMode === 'difference' ? differencePae : pae;
   const activeLabel = activeMode === 'comparison' ? comparison?.label ?? 'Comparison model' : activeMode === 'difference' ? '|ΔPAE|' : primaryLabel;
+  const activeChainIds = activeMode === 'comparison' ? comparison?.chainIds : chainIds;
+  const activeTokenResidues = activeMode === 'comparison' ? comparison?.tokenResidues : tokenResidues;
+  const selectionCompatible = activeMode !== 'comparison' || Boolean(differencePae);
+  const activeSelection = selectionCompatible ? selection : null;
+  const chainBoundaries = useMemo(() => boundaries(activeChainIds), [activeChainIds]);
+  const chainSegments = useMemo(() => (chainBoundaries.length ? chainBoundaries : [{ index: 0, id: 'Tokens' }]).map((chain, index, all) => ({ ...chain, end: (all[index + 1]?.index ?? (activePae?.length ?? 1)) - 1 })), [activePae?.length, chainBoundaries]);
+  const chainPairs = useMemo(() => chainSegments.flatMap((first, firstIndex) => chainSegments.slice(firstIndex + 1).map((second) => [first, second] as const)), [chainSegments]);
   const maxValue = activeMode === 'difference' ? 16 : 32;
-  const matchedPair = selection && chainPairs.findIndex(([x, y]) => selection.xStart === x.index && selection.xEnd === x.end && selection.yStart === y.index && selection.yEnd === y.end);
+  const matchedPair = activeSelection && chainPairs.findIndex(([x, y]) => activeSelection.xStart === x.index && activeSelection.xEnd === x.end && activeSelection.yStart === y.index && activeSelection.yEnd === y.end);
   const pairValue = typeof matchedPair === 'number' && matchedPair >= 0 ? String(matchedPair) : '';
 
   useEffect(() => {
@@ -97,8 +103,8 @@ export function PaeHeatmap({
     for (let y = 0; y < height; y += 1) {
       const sourceY = Math.min(n - 1, Math.floor((y / height) * n));
       for (let x = 0; x < width; x += 1) {
-        const sourceX = Math.min((activePae[sourceY]?.length ?? n) - 1, Math.floor((x / width) * n));
-        const [r, g, b] = paeColor(activePae[sourceY]?.[sourceX] ?? maxValue, maxValue);
+        const sourceX = Math.min(n - 1, Math.floor((x / width) * n));
+        const [r, g, b] = paeColor(activePae[sourceX]?.[sourceY] ?? maxValue, maxValue);
         const offset = (y * width + x) * 4;
         image.data[offset] = r;
         image.data[offset + 1] = g;
@@ -115,11 +121,11 @@ export function PaeHeatmap({
       const y = (boundary.index / n) * height;
       context.beginPath(); context.moveTo(0, y); context.lineTo(width, y); context.stroke();
     }
-    if (selection) {
-      const x = (selection.xStart / n) * width;
-      const y = (selection.yStart / n) * height;
-      const selectedWidth = ((selection.xEnd - selection.xStart + 1) / n) * width;
-      const selectedHeight = ((selection.yEnd - selection.yStart + 1) / n) * height;
+    if (activeSelection) {
+      const x = (activeSelection.xStart / n) * width;
+      const y = (activeSelection.yStart / n) * height;
+      const selectedWidth = ((activeSelection.xEnd - activeSelection.xStart + 1) / n) * width;
+      const selectedHeight = ((activeSelection.yEnd - activeSelection.yStart + 1) / n) * height;
       context.fillStyle = 'rgba(255, 255, 255, .12)';
       context.fillRect(x, y, selectedWidth, selectedHeight);
       context.strokeStyle = '#ffffff';
@@ -137,10 +143,10 @@ export function PaeHeatmap({
       context.beginPath(); context.moveTo(x, 0); context.lineTo(x, height); context.stroke();
       context.beginPath(); context.moveTo(0, y); context.lineTo(width, y); context.stroke();
     }
-  }, [activePae, chainBoundaries, hover, maxValue, selection]);
+  }, [activePae, activeSelection, chainBoundaries, hover, maxValue]);
 
   const pointerToken = (event: React.PointerEvent<HTMLCanvasElement>) => {
-    if (!activePae?.length) return;
+    if (!activePae?.length || !selectionCompatible) return;
     const box = event.currentTarget.getBoundingClientRect();
     const n = activePae.length;
     return {
@@ -187,7 +193,7 @@ export function PaeHeatmap({
   };
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLCanvasElement>) => {
-    if (!activePae?.length) return;
+    if (!activePae?.length || !selectionCompatible) return;
     if (event.key === 'Escape') { onSelection(null); return; }
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
@@ -204,10 +210,10 @@ export function PaeHeatmap({
   };
 
   const residueLabel = (index: number) => {
-    const token = tokenResidues?.[index];
+    const token = activeTokenResidues?.[index];
     return token ? `${token.chainId} ${token.residueNumber ?? token.residueId}` : `token ${index + 1}`;
   };
-  const hoverValue = hover && activePae?.[hover.y]?.[hover.x];
+  const hoverValue = hover && activePae?.[hover.x]?.[hover.y];
   const comparisonSelection = comparison?.selectionStats;
   const selectionDelta = selectionStats?.medianPae !== null && selectionStats?.medianPae !== undefined && comparisonSelection?.medianPae !== null && comparisonSelection?.medianPae !== undefined
     ? comparisonSelection.medianPae - selectionStats.medianPae : null;
@@ -221,7 +227,7 @@ export function PaeHeatmap({
         {activePae?.length && <div className="pae-quick-actions">
           <label className="pae-pair-picker">
             <span>Chain pair</span>
-            <select aria-label="Chain pair" value={pairValue} onChange={(event) => {
+            <select aria-label="Chain pair" value={pairValue} disabled={!selectionCompatible} onChange={(event) => {
               const pair = chainPairs[Number(event.target.value)];
               if (pair) onSelection({ xStart: pair[0].index, xEnd: pair[0].end, yStart: pair[1].index, yEnd: pair[1].end });
             }}>
@@ -229,7 +235,7 @@ export function PaeHeatmap({
               {chainPairs.map(([x, y], index) => <option value={index} key={`${x.id}-${y.id}-${index}`}>{x.id} aligned → {y.id} scored</option>)}
             </select>
           </label>
-          {selection && <button type="button" onClick={() => onSelection(null)}>Clear selection</button>}
+          {activeSelection && <button type="button" onClick={() => onSelection(null)}>Clear selection</button>}
         </div>}
         {selectionStats && <div className="pae-selection-summary" role="status" aria-live="polite">
           <span>Reciprocal median</span><strong>{metric(selectionStats.medianPae)}</strong>
@@ -251,7 +257,7 @@ export function PaeHeatmap({
                 <span>{comparison.label} {metric(comparisonSelection.medianPae)}</span>
                 <strong>Δ {selectionDelta === null ? '—' : `${selectionDelta >= 0 ? '+' : ''}${selectionDelta.toFixed(1)} Å`}</strong>
               </div>}
-              {!differencePae && <small className="pae-compare-warning">PAE dimensions differ; difference view is unavailable.</small>}
+              {!differencePae && <small className="pae-compare-warning">PAE dimensions differ; difference and cross-model selection are unavailable.</small>}
             </div>}
           </div>
           <div className="heatmap-frame">
@@ -263,7 +269,7 @@ export function PaeHeatmap({
             <canvas ref={canvasRef} tabIndex={0} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerLeave={() => { if (!dragStartRef.current) setHover(null); }} onKeyDown={handleKeyDown} aria-label={`Interactive predicted aligned error heatmap · ${activeLabel}`} aria-describedby={instructionsId} />
             <span className="sr-only" id={instructionsId}>Use arrow keys to inspect cells, Enter to select, and Escape to clear. The vertical axis is the scored residue and the horizontal axis is the alignment reference. PAE is directional.</span>
             {hover && <span className="heatmap-hover-value" role="status">Scored {residueLabel(hover.y)} · aligned on {residueLabel(hover.x)} · {Number.isFinite(hoverValue) ? `${hoverValue!.toFixed(1)} Å` : 'no value'}</span>}
-            {selection && selectionLabel && <span className="heatmap-selection-label">{selectionLabel}</span>}
+            {activeSelection && selectionLabel && <span className="heatmap-selection-label">{selectionLabel}</span>}
             <div className="heatmap-axis"><span>1</span><strong>Alignment reference</strong><span>{activePae.length}</span></div>
             <span className="heatmap-y-axis" aria-hidden="true">Scored residue</span>
           </div>

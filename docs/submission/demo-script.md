@@ -6,7 +6,7 @@ Record in English, with the public deployment and live GPT-5.6 analysis enabled.
 
 “An AlphaFold 3 job gives researchers structures, summary confidence, full PAE, and several prediction samples—but reviewing them still means switching between files and tools. FoldLens turns that folder into one evidence-linked workspace.”
 
-Show the welcome screen, then select **Explore sample result**.
+Show the welcome screen, then select **Explore sample result**. Say explicitly: “This demo uses one experimental PDB structure with five illustrative confidence variants, not five predicted coordinate models.”
 
 ## 0:20–0:50 — Local-first import
 
@@ -22,7 +22,7 @@ Switch models, rotate the structure, and select a PAE region. Show the correspon
 
 ## 1:25–2:05 — Grounded GPT-5.6 analysis
 
-“Ask FoldLens does not send the raw scientific files to an unconstrained chatbot. The app first derives a small deterministic fact set from the active model and selection. GPT-5.6 receives only those facts and returns a schema-validated answer whose evidence actions can reference only supplied chains and residue ranges.”
+“Ask FoldLens does not send the raw scientific files to an unconstrained chatbot. The app first derives a small deterministic fact set from the active model and selection. GPT-5.6 receives the user’s question plus those facts. Its schema and a second semantic allowlist reject viewer actions that do not match the active chains, residue bounds, and PAE selection.”
 
 Submit: “Is the Q–S interface reliable?” Show the live GPT-5.6 byline, evidence, caveat, and **Show interface** or residue action.
 
@@ -30,10 +30,10 @@ Submit: “Is the Q–S interface reliable?” Show the live GPT-5.6 byline, evi
 
 ## 2:05–2:35 — Codex collaboration
 
-“Codex helped build and test the AlphaFold file matcher, PAE interactions, responsive layouts, and evidence-linked assistant. It also helped turn usability audits into the import flow and explicit sample labels. I made the core product decisions: keep raw files local, make every AI statement traceable, and prefer honest scientific limitations over unsupported claims.”
+“Codex helped build and test the AlphaFold file matcher, PAE interactions, responsive layouts, and evidence-linked assistant. It also helped turn usability audits into the import flow and explicit sample labels. I made the core product decisions: keep raw files local, bound AI actions to active evidence, and prefer honest scientific limitations over unsupported claims.”
 
 Show a quick mobile viewport or the repository tests while narrating.
 
 ## 2:35–2:45 — Close
 
-“FoldLens shortens the path from an AlphaFold result folder to the next evidence-backed inspection. It is one private workspace for structures, confidence, PAE, and grounded GPT-5.6 analysis.”
+“FoldLens shortens the path from an AlphaFold result folder to the next evidence-backed inspection. It is one local-first workspace for structures, confidence, PAE, and grounded GPT-5.6 analysis.”

@@ -1,15 +1,33 @@
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { buildLocalAssistantResponse } from '../lib/analysis';
 import type { FocusMode, Prediction } from '../types/af3';
 import type { AnalysisFacts, AssistantEnvelope, AssistantResponse, EvidenceAction } from '../types/analysis';
 import { Icon } from './Icon';
 
 type Props = {
+  onAction: (action: EvidenceAction) => void;
+};
+
+type SessionProps = {
   facts: AnalysisFacts;
   prediction: Prediction;
   focusMode?: FocusMode;
-  onAction: (action: EvidenceAction) => void;
+  children: ReactNode;
 };
+
+type AssistantSession = {
+  question: string;
+  setQuestion: (question: string) => void;
+  askedQuestion: string;
+  answer: AssistantResponse;
+  source: 'live' | 'local';
+  model: string;
+  busy: boolean;
+  status?: string;
+  ask: (event: React.FormEvent) => Promise<void>;
+};
+
+const AssistantSessionContext = createContext<AssistantSession | null>(null);
 
 function questionFor(facts: AnalysisFacts, focusMode: FocusMode) {
   if (focusMode === 'domains' && facts.domains.length) return 'Which domain should I inspect first?';
@@ -17,7 +35,7 @@ function questionFor(facts: AnalysisFacts, focusMode: FocusMode) {
   return pair ? `Is the ${pair.chainA}–${pair.chainB} interface reliable?` : 'What should I inspect first?';
 }
 
-export function AssistantPanel({ facts, prediction, focusMode = 'all', onAction }: Props) {
+export function AssistantSessionProvider({ facts, prediction, focusMode = 'all', children }: SessionProps) {
   const defaultQuestion = useMemo(() => questionFor(facts, focusMode), [facts, focusMode]);
   const localPreview = useMemo(() => buildLocalAssistantResponse(facts, prediction, defaultQuestion), [defaultQuestion, facts, prediction]);
   const [question, setQuestion] = useState(defaultQuestion);
@@ -27,26 +45,34 @@ export function AssistantPanel({ facts, prediction, focusMode = 'all', onAction 
   const [model, setModel] = useState('deterministic metrics');
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<string>();
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const inputId = useId();
+  const requestRef = useRef<{ id: number; controller: AbortController } | null>(null);
+  const requestIdRef = useRef(0);
+  const predictionIdRef = useRef(prediction.id);
 
   useEffect(() => {
-    setQuestion(defaultQuestion);
-    setAskedQuestion(defaultQuestion);
-    setAnswer(localPreview);
-    setSource('local');
-    setModel('deterministic metrics');
-    setStatus(undefined);
-  }, [defaultQuestion, localPreview]);
-
-  useEffect(() => {
-    scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
-  }, [answer, askedQuestion]);
+    requestRef.current?.controller.abort();
+    requestIdRef.current += 1;
+    if (predictionIdRef.current !== prediction.id) {
+      predictionIdRef.current = prediction.id;
+      setQuestion(defaultQuestion);
+      setAskedQuestion(defaultQuestion);
+      setAnswer(localPreview);
+      setSource('local');
+      setModel('deterministic metrics');
+      setStatus(undefined);
+    }
+    setBusy(false);
+    return () => requestRef.current?.controller.abort();
+  }, [defaultQuestion, facts, localPreview, prediction.id]);
 
   const ask = async (event: React.FormEvent) => {
     event.preventDefault();
     const nextQuestion = question.trim();
     if (nextQuestion.length < 3 || busy) return;
+    requestRef.current?.controller.abort();
+    const requestId = ++requestIdRef.current;
+    const controller = new AbortController();
+    requestRef.current = { id: requestId, controller };
     setBusy(true);
     setAskedQuestion(nextQuestion);
     setStatus(undefined);
@@ -55,31 +81,48 @@ export function AssistantPanel({ facts, prediction, focusMode = 'all', onAction 
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ question: nextQuestion, facts }),
+        signal: controller.signal,
       });
       const payload = await response.json() as AssistantEnvelope | { message?: string };
       if (!response.ok || !('data' in payload)) throw new Error('message' in payload ? payload.message : 'Analysis request failed');
+      if (requestId !== requestIdRef.current) return;
       setAnswer(payload.data);
       setSource(payload.source);
       setModel(payload.model);
       setStatus(payload.fallbackReason ? 'Live explanation is unavailable. This answer was computed only from the loaded confidence metrics.' : undefined);
-    } catch {
+    } catch (error) {
+      if (controller.signal.aborted || requestId !== requestIdRef.current || error instanceof DOMException && error.name === 'AbortError') return;
       setAnswer(buildLocalAssistantResponse(facts, prediction, nextQuestion));
       setSource('local');
       setModel('deterministic metrics');
       setStatus('Live explanation is unavailable. This answer was computed only from the loaded confidence metrics.');
     } finally {
-      setBusy(false);
+      if (requestId === requestIdRef.current) setBusy(false);
     }
   };
 
+  return <AssistantSessionContext.Provider value={{ question, setQuestion, askedQuestion, answer, source, model, busy, status, ask }}>{children}</AssistantSessionContext.Provider>;
+}
+
+export function AssistantPanel({ onAction }: Props) {
+  const session = useContext(AssistantSessionContext);
+  if (!session) throw new Error('AssistantPanel must be rendered inside AssistantSessionProvider.');
+  const { question, setQuestion, askedQuestion, answer, source, model, busy, status, ask } = session;
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const inputId = useId();
+
+  useEffect(() => {
+    scrollRef.current?.scrollTo?.({ top: 0, behavior: 'smooth' });
+  }, [answer, askedQuestion]);
+
   return (
-    <div className="assistant-panel">
+    <div className="assistant-panel" aria-busy={busy}>
       <div className="assistant-scroll" ref={scrollRef}>
         <div className="assistant-question">
           <span>You asked</span>
           <p>{askedQuestion}</p>
         </div>
-        <div className="assistant-answer">
+        <div className="assistant-answer" aria-live="polite" aria-atomic="true">
           <div className="assistant-byline"><span>FoldLens</span><small>{source === 'live' ? model : 'offline confidence brief'}</small></div>
           <h2>{answer.answer}</h2>
         </div>

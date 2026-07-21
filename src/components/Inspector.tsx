@@ -5,14 +5,18 @@ function interpretation(summary: AF3Summary) {
   if (summary.iptm === undefined && summary.ptm === undefined) {
     return 'The structure is ready to inspect. Add the matching summary confidence JSON to see confidence-aware interpretation.';
   }
-  const iptm = summary.iptm ?? 0;
+  const clash = summary.hasClash ? ' Significant steric clashes were reported.' : summary.hasClash === false ? ' No significant clashes were reported.' : '';
+  if (summary.iptm === undefined) {
+    const foldQuality = summary.ptm! >= 0.8 ? 'High global fold confidence' : summary.ptm! >= 0.5 ? 'Moderate global fold confidence' : 'Low global fold confidence';
+    return `${foldQuality}. pTM describes the overall predicted fold; no interface-confidence score was loaded.${clash}`;
+  }
+  const iptm = summary.iptm;
   const quality = iptm >= 0.8 ? 'High-confidence interface' : iptm >= 0.6 ? 'Mixed-confidence interface' : 'Low-confidence interface';
   const detail = iptm >= 0.8
     ? 'The predicted chain arrangement is well defined. Inspect local PAE before interpreting flexible loops or termini.'
     : iptm >= 0.6
       ? 'The global arrangement is plausible, but some interfaces may move between samples. Compare models and inspect chain-pair PAE.'
       : 'The relative chain placement is uncertain. Treat the interface as a hypothesis and compare samples before drawing conclusions.';
-  const clash = summary.hasClash ? ' Significant steric clashes were reported.' : summary.hasClash === false ? ' No significant clashes were reported.' : '';
   return `${quality}. ${detail}${clash}`;
 }
 

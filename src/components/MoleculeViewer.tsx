@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties } from 'react';
 import type { AF3Confidence, ChainInfo, DomainRegion, FocusMode, ResidueRange } from '../types/af3';
 import type { LigandFocus } from '../lib/focusMode';
 import { DomainLegend } from './DomainLegend';
@@ -12,6 +12,7 @@ type Props = {
   chains: ChainInfo[];
   visibleChains: Set<string>;
   colorMode: ColorMode;
+  brightness?: number;
   surface: boolean;
   surfaceOnly?: boolean;
   onSurfaceOnly?: (surfaceOnly: boolean) => void;
@@ -69,12 +70,13 @@ const confidenceColor = (value: number) => {
   return '#f27d69';
 };
 
-export function MoleculeViewer({ cif, confidence, compareCif, compareLabel, chains, visibleChains, colorMode, surface, surfaceOnly = false, onSurfaceOnly, focusMode = 'all', interfaceChains, interfaceScore, ligandFocus, domains = EMPTY_DOMAINS, selectedDomainId, onSelectDomain, highlightedChain, highlightedResidues = [], highlightedLabel, resetSignal }: Props) {
+export function MoleculeViewer({ cif, confidence, compareCif, compareLabel, chains, visibleChains, colorMode, brightness = 100, surface, surfaceOnly = false, onSurfaceOnly, focusMode = 'all', interfaceChains, interfaceScore, ligandFocus, domains = EMPTY_DOMAINS, selectedDomainId, onSelectDomain, highlightedChain, highlightedResidues = [], highlightedLabel, resetSignal }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
+  const instructionsId = useId();
   const viewerRef = useRef<any>(null);
   const threeDmolRef = useRef<any>(null);
-  const surfaceRunRef = useRef(0);
-  const [loading, setLoading] = useState(true);
+  const renderRunRef = useRef(0);
+  const [renderStatus, setRenderStatus] = useState<'model' | 'rendering' | 'surface' | null>('model');
   const [surfaceStatus, setSurfaceStatus] = useState<'idle' | 'building' | 'ready' | 'error'>('idle');
   const [viewerReady, setViewerReady] = useState(0);
   const [focusDetails, setFocusDetails] = useState<FocusDetails | null>(null);
@@ -99,6 +101,11 @@ export function MoleculeViewer({ cif, confidence, compareCif, compareLabel, chai
       byChain: new Map([...byChainValues].map(([chain, chainValues]) => [chain, chainValues.reduce((sum, value) => sum + value, 0) / chainValues.length])),
     };
   }, [confidence?.tokenPlddts, confidence?.tokenResidues]);
+  const hasPlddt = confidenceMaps.byResidue.size > 0 || confidenceMaps.byChain.size > 0;
+  const confidenceAtomColor = useCallback((atom: { chain?: string; resi?: number | string }) => {
+    const value = confidenceMaps.byResidue.get(`${atom.chain}:${atom.resi}`) ?? confidenceMaps.byChain.get(atom.chain ?? '');
+    return value === undefined ? '#8da0ad' : confidenceColor(value);
+  }, [confidenceMaps]);
   const interfaceChainA = interfaceChains?.[0];
   const interfaceChainB = interfaceChains?.[1];
   const interfaceFocus = useMemo(
@@ -122,23 +129,25 @@ export function MoleculeViewer({ cif, confidence, compareCif, compareLabel, chai
     };
   }, [confidenceMaps]);
 
-  const applyStyle = useCallback(() => {
+  const applyStyle = useCallback((renderRun: number) => {
     void viewerReady;
     const viewer = viewerRef.current;
     if (!viewer) return;
-    const surfaceRun = ++surfaceRunRef.current;
+    const finishRendering = () => {
+      if (renderRun === renderRunRef.current && viewer === viewerRef.current) setRenderStatus(null);
+    };
     const surfaceTasks: Promise<unknown>[] = [];
     const hideCartoon = surface && surfaceOnly;
     const focusedInterfaceChains = new Set([interfaceChainA, interfaceChainB].filter((chain): chain is string => Boolean(chain)));
+    try {
     viewer.removeAllSurfaces();
     setSurfaceStatus(surface ? 'building' : 'idle');
     viewer.setStyle({}, {});
-    chains.filter((chain) => chain.kind !== 'ligand').forEach((chain, index) => {
-      if (!visibleChains.has(chain.id)) return;
+    chains.filter((chain) => chain.kind !== 'ligand' && visibleChains.has(chain.id)).forEach((chain, index) => {
       const chainColor = highlightedChain === chain.id ? '#f7f4d1' : chain.color;
       const focusOpacity = focusMode === 'all' ? 1 : focusMode === 'interface' && focusedInterfaceChains.has(chain.id) ? 0.52 : focusMode === 'domains' ? 0.08 : 0.15;
       const cartoon = colorMode === 'confidence'
-        ? { opacity: focusOpacity, colorfunc: (atom: { b?: number; chain?: string; resi?: number | string }) => confidenceColor(confidenceMaps.byResidue.get(`${atom.chain}:${atom.resi}`) ?? confidenceMaps.byChain.get(atom.chain ?? '') ?? atom.b ?? 82) }
+        ? { opacity: focusOpacity, colorfunc: confidenceAtomColor }
         : { opacity: focusOpacity, color: chainColor };
       if (!hideCartoon) viewer.setStyle({ model: 0, chain: chain.id, hetflag: false }, { cartoon });
       if (surface && index < 3) {
@@ -156,14 +165,14 @@ export function MoleculeViewer({ cif, confidence, compareCif, compareLabel, chai
     }
     if (focusMode === 'interface' && interfaceFocus && !hideCartoon) {
       viewer.setStyle(interfaceFocus.residues, {
-        cartoon: { opacity: 0.95, colorfunc: (atom: { chain?: string; resi?: number | string }) => confidenceColor(confidenceMaps.byResidue.get(`${atom.chain}:${atom.resi}`) ?? confidenceMaps.byChain.get(atom.chain ?? '') ?? 82) },
-        stick: { radius: 0.17, colorfunc: (atom: { chain?: string; resi?: number | string }) => confidenceColor(confidenceMaps.byResidue.get(`${atom.chain}:${atom.resi}`) ?? confidenceMaps.byChain.get(atom.chain ?? '') ?? 82) },
+        cartoon: { opacity: 0.95, colorfunc: confidenceAtomColor },
+        stick: { radius: 0.17, colorfunc: confidenceAtomColor },
       });
       setFocusDetails(summarizeFocus(viewer.selectedAtoms(interfaceFocus.residues)));
     } else if (focusMode === 'pocket' && pocketFocus && !hideCartoon) {
       viewer.setStyle(pocketFocus.residues, {
-        cartoon: { opacity: 0.95, colorfunc: (atom: { chain?: string; resi?: number | string }) => confidenceColor(confidenceMaps.byResidue.get(`${atom.chain}:${atom.resi}`) ?? confidenceMaps.byChain.get(atom.chain ?? '') ?? 82) },
-        stick: { radius: 0.17, colorfunc: (atom: { chain?: string; resi?: number | string }) => confidenceColor(confidenceMaps.byResidue.get(`${atom.chain}:${atom.resi}`) ?? confidenceMaps.byChain.get(atom.chain ?? '') ?? 82) },
+        cartoon: { opacity: 0.95, colorfunc: confidenceAtomColor },
+        stick: { radius: 0.17, colorfunc: confidenceAtomColor },
       });
       viewer.setStyle(pocketFocus.target, { stick: { radius: 0.24, colorscheme: 'Jmol' }, sphere: { scale: 0.28, colorscheme: 'Jmol' } });
       setFocusDetails(summarizeFocus(viewer.selectedAtoms(pocketFocus.residues)));
@@ -186,31 +195,46 @@ export function MoleculeViewer({ cif, confidence, compareCif, compareLabel, chai
       });
     }
     if (compareCif && !hideCartoon) {
-      viewer.setStyle({ model: 1, hetflag: false }, { cartoon: { color: '#f0b455', opacity: 0.52 } });
-      viewer.setStyle({ model: 1, hetflag: true }, { stick: { color: '#f0b455', radius: 0.12, opacity: 0.5 } });
+      chains.filter((chain) => visibleChains.has(chain.id)).forEach((chain) => {
+        if (chain.kind === 'ligand') viewer.setStyle({ model: 1, chain: chain.id, hetflag: true }, { stick: { color: '#f0b455', radius: 0.12, opacity: 0.5 } });
+        else viewer.setStyle({ model: 1, chain: chain.id, hetflag: false }, { cartoon: { color: '#f0b455', opacity: 0.52 } });
+      });
     }
     viewer.render();
     if (surfaceTasks.length > 0) {
       void Promise.all(surfaceTasks).then(() => {
-        if (surfaceRun !== surfaceRunRef.current || viewer !== viewerRef.current) return;
+        if (renderRun !== renderRunRef.current || viewer !== viewerRef.current) return;
         viewer.render();
         setSurfaceStatus('ready');
+        finishRendering();
       }).catch(() => {
-        if (surfaceRun !== surfaceRunRef.current || viewer !== viewerRef.current) return;
+        if (renderRun !== renderRunRef.current || viewer !== viewerRef.current) return;
         setSurfaceStatus('error');
+        finishRendering();
       });
     } else if (surface) {
       setSurfaceStatus('error');
+      finishRendering();
+    } else {
+      finishRendering();
     }
-  }, [chains, colorMode, compareCif, confidenceMaps, domains, focusMode, highlightedChain, highlightedResidues, interfaceChainA, interfaceChainB, interfaceFocus, pocketFocus, selectedDomainId, summarizeFocus, surface, surfaceOnly, viewerReady, visibleChains]);
+    } catch {
+      if (surface) setSurfaceStatus('error');
+      finishRendering();
+    }
+  }, [chains, colorMode, compareCif, confidenceAtomColor, domains, focusMode, highlightedChain, highlightedResidues, interfaceChainA, interfaceChainB, interfaceFocus, pocketFocus, selectedDomainId, summarizeFocus, surface, surfaceOnly, viewerReady, visibleChains]);
 
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
     let cancelled = false;
-    setLoading(true);
+    renderRunRef.current += 1;
+    setRenderStatus('model');
     host.innerHTML = '';
-    if (!cif) return () => { cancelled = true; };
+    if (!cif) {
+      setRenderStatus(null);
+      return () => { cancelled = true; };
+    }
     void import('3dmol').then((ThreeDmol) => {
       if (cancelled) return;
       threeDmolRef.current = ThreeDmol;
@@ -224,20 +248,36 @@ export function MoleculeViewer({ cif, confidence, compareCif, compareLabel, chai
         viewer.setProjection('orthographic');
         viewer.setBackgroundColor('#07131d', 1);
         setViewerReady((value) => value + 1);
-      } finally {
-        setLoading(false);
+      } catch {
+        setRenderStatus(null);
       }
-    }).catch(() => setLoading(false));
+    }).catch(() => {
+      if (!cancelled) setRenderStatus(null);
+    });
     return () => {
       cancelled = true;
-      surfaceRunRef.current += 1;
+      renderRunRef.current += 1;
       viewerRef.current = null;
       threeDmolRef.current = null;
       host.innerHTML = '';
     };
   }, [cif, compareCif]);
 
-  useEffect(() => { applyStyle(); }, [applyStyle]);
+  useEffect(() => {
+    if (!viewerRef.current) return;
+    const renderRun = ++renderRunRef.current;
+    setRenderStatus(surface ? 'surface' : 'rendering');
+    if (surface) setSurfaceStatus('building');
+    let renderFrame: number | undefined;
+    // Allow the loading state to paint before 3Dmol starts synchronous WebGL work.
+    const paintFrame = window.requestAnimationFrame(() => {
+      renderFrame = window.requestAnimationFrame(() => applyStyle(renderRun));
+    });
+    return () => {
+      window.cancelAnimationFrame(paintFrame);
+      if (renderFrame !== undefined) window.cancelAnimationFrame(renderFrame);
+    };
+  }, [applyStyle, surface]);
 
   const zoomToFocus = useCallback(() => {
     void viewerReady;
@@ -275,10 +315,45 @@ export function MoleculeViewer({ cif, confidence, compareCif, compareLabel, chai
     return () => window.removeEventListener('resize', onResize);
   }, []);
 
+  const handleViewerKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const viewer = viewerRef.current;
+    if (!viewer) return;
+    const rotations: Record<string, [number, string]> = {
+      ArrowLeft: [-8, 'y'], ArrowRight: [8, 'y'], ArrowUp: [-8, 'x'], ArrowDown: [8, 'x'],
+    };
+    const rotation = rotations[event.key];
+    if (rotation) viewer.rotate(rotation[0], rotation[1]);
+    else if (event.key === '+' || event.key === '=') viewer.zoom(1.12);
+    else if (event.key === '-' || event.key === '_') viewer.zoom(0.88);
+    else if (event.key === 'Home') zoomToFocus();
+    else return;
+    event.preventDefault();
+    viewer.render();
+  };
+
+  const renderMessage = renderStatus === 'model'
+    ? ['Loading structure…', 'Preparing the 3D viewer']
+    : renderStatus === 'surface'
+      ? ['Building molecular surface…', 'Large structures may take a moment']
+      : ['Rendering structure…', 'Applying the current view settings'];
+
   return (
-    <div className="molecule-host-wrap">
-      <div className="molecule-host" ref={hostRef} aria-label="Interactive three-dimensional molecular structure" />
-      {loading && <div className="viewer-loading"><span />Rendering structure…</div>}
+    <div className="molecule-host-wrap" aria-busy={renderStatus !== null}>
+      <div
+        className="molecule-host"
+        ref={hostRef}
+        tabIndex={0}
+        aria-label="Interactive three-dimensional molecular structure"
+        aria-describedby={instructionsId}
+        onKeyDown={handleViewerKeyDown}
+        style={{ '--structure-brightness': `${Math.min(140, Math.max(60, brightness))}%` } as CSSProperties}
+      />
+      <span className="sr-only" id={instructionsId}>Use arrow keys to rotate, plus and minus to zoom, and Home to reset the structure view.</span>
+      {renderStatus && <div className={`viewer-loading ${renderStatus === 'model' ? 'initial' : 'overlay'}`} role="status" aria-live="polite">
+        <span />
+        <strong>{renderMessage[0]}</strong>
+        <small>{renderMessage[1]}</small>
+      </div>}
       {surface && <div className={`surface-status ${surfaceStatus}`}>
         <span className="surface-state" role="status" aria-live="polite">
           <i />
@@ -306,7 +381,7 @@ export function MoleculeViewer({ cif, confidence, compareCif, compareLabel, chai
         <small>Amber highlight · separate from ≤5 Å contact geometry</small>
       </div>}
       {focusMode === 'domains' && domains.length > 0 && onSelectDomain && <DomainLegend domains={domains} selectedDomainId={selectedDomainId} onSelect={onSelectDomain} />}
-      {((colorMode === 'confidence' && focusMode === 'all') || focusMode === 'interface' || focusMode === 'pocket') && !(surface && surfaceOnly) && <div className="plddt-legend" aria-label="pLDDT confidence color legend. Confidence is not experimental validation.">
+      {hasPlddt && ((colorMode === 'confidence' && focusMode === 'all') || focusMode === 'interface' || focusMode === 'pocket') && !(surface && surfaceOnly) && <div className="plddt-legend" aria-label="pLDDT confidence color legend. Confidence is not experimental validation.">
         <strong>pLDDT confidence</strong>
         <span><i className="very-high" /><b>Very high</b><small>90+</small></span>
         <span><i className="confident" /><b>Confident</b><small>70–89</small></span>
@@ -314,7 +389,7 @@ export function MoleculeViewer({ cif, confidence, compareCif, compareLabel, chai
         <span><i className="very-low" /><b>Very low</b><small>&lt;50</small></span>
       </div>}
       {compareCif && <div className="viewer-compare-legend"><i />Overlay: {compareLabel ?? 'comparison model'}</div>}
-      <div className="viewer-hint">Drag to rotate · Scroll to zoom</div>
+      <div className="viewer-hint">Drag or arrow keys to rotate · Scroll or +/− to zoom</div>
     </div>
   );
 }

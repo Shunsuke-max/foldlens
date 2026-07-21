@@ -70,7 +70,7 @@ export default async function handler(request: IncomingMessage, response: Server
       method: 'POST',
       headers,
       body: await readBody(request),
-      signal: AbortSignal.timeout(55_000),
+      signal: AbortSignal.timeout(70_000),
     });
     response.statusCode = upstream.status;
     for (const header of forwardedResponseHeaders) {

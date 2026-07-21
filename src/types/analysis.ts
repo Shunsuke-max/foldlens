@@ -1,4 +1,4 @@
-import type { DomainRegion, ResidueRange } from './af3';
+import type { DomainRegion, ResidueRange, Selection } from './af3';
 
 export type InterfaceFact = {
   chainA: string;
@@ -26,6 +26,7 @@ export type SelectionFact = {
   alignedLabel: string;
   scoredLabel: string;
   residueRanges: ResidueRange[];
+  matrixRange: NonNullable<Selection>;
 };
 
 export type DomainFact = Omit<DomainRegion, 'color'>;
@@ -37,6 +38,9 @@ export type AnalysisFacts = {
   ptm: number | null;
   iptm: number | null;
   hasClash: boolean | null;
+  hasPae: boolean;
+  hasPlddt: boolean;
+  chainRanges: ResidueRange[];
   primaryInterface: InterfaceFact | null;
   domains: DomainFact[];
   lowConfidenceRegions: LowConfidenceRegion[];
@@ -48,6 +52,7 @@ export type EvidenceAction = {
   type: 'show_interface' | 'show_residues' | 'show_selection' | 'none';
   chainIds: string[];
   residueRanges: ResidueRange[];
+  selection: Selection;
 };
 
 export type AssistantEvidence = {

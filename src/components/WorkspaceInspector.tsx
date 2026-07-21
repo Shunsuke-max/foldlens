@@ -1,31 +1,46 @@
-import { useState } from 'react';
-import type { Prediction, ChainInfo, FocusMode } from '../types/af3';
-import type { AnalysisFacts, EvidenceAction } from '../types/analysis';
+import { useId, useRef, useState } from 'react';
+import type { Prediction, ChainInfo } from '../types/af3';
+import type { EvidenceAction } from '../types/analysis';
 import { AssistantPanel } from './AssistantPanel';
 import { Inspector } from './Inspector';
 
 type Props = {
   prediction: Prediction;
-  facts: AnalysisFacts;
   chains: ChainInfo[];
   visibleChains: Set<string>;
   notices: string[];
-  focusMode?: FocusMode;
   onToggleChain: (id: string) => void;
   onAction: (action: EvidenceAction) => void;
 };
 
-export function WorkspaceInspector({ prediction, facts, chains, visibleChains, notices, focusMode = 'all', onToggleChain, onAction }: Props) {
+export function WorkspaceInspector({ prediction, chains, visibleChains, notices, onToggleChain, onAction }: Props) {
   const [tab, setTab] = useState<'analysis' | 'ask'>('ask');
+  const tabListRef = useRef<HTMLDivElement>(null);
+  const analysisTabId = useId();
+  const askTabId = useId();
+  const analysisPanelId = useId();
+  const askPanelId = useId();
+  const selectTab = (next: 'analysis' | 'ask') => {
+    setTab(next);
+    const index = next === 'analysis' ? 0 : 1;
+    window.requestAnimationFrame(() => tabListRef.current?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[index]?.focus());
+  };
   return (
     <aside className="workspace-inspector" aria-label="Prediction analysis workspace">
-      <div className="inspector-tabs" role="tablist" aria-label="Inspector mode">
-        <button type="button" role="tab" aria-selected={tab === 'analysis'} onClick={() => setTab('analysis')}>Analysis</button>
-        <button type="button" role="tab" aria-selected={tab === 'ask'} onClick={() => setTab('ask')}>Ask FoldLens</button>
+      <div className="inspector-tabs" role="tablist" aria-label="Inspector mode" ref={tabListRef} onKeyDown={(event) => {
+        if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight' && event.key !== 'Home' && event.key !== 'End') return;
+        event.preventDefault();
+        selectTab(event.key === 'ArrowLeft' || event.key === 'Home' ? 'analysis' : 'ask');
+      }}>
+        <button id={analysisTabId} type="button" role="tab" aria-selected={tab === 'analysis'} aria-controls={analysisPanelId} tabIndex={tab === 'analysis' ? 0 : -1} onClick={() => setTab('analysis')}>Analysis</button>
+        <button id={askTabId} type="button" role="tab" aria-selected={tab === 'ask'} aria-controls={askPanelId} tabIndex={tab === 'ask' ? 0 : -1} onClick={() => setTab('ask')}>Ask FoldLens</button>
       </div>
-      {tab === 'analysis'
-        ? <Inspector summary={prediction.summary} chains={chains} visibleChains={visibleChains} onToggleChain={onToggleChain} notices={notices} embedded />
-        : <AssistantPanel facts={facts} prediction={prediction} focusMode={focusMode} onAction={onAction} />}
+      <div id={analysisPanelId} role="tabpanel" aria-labelledby={analysisTabId} hidden={tab !== 'analysis'}>
+        <Inspector summary={prediction.summary} chains={chains} visibleChains={visibleChains} onToggleChain={onToggleChain} notices={notices} embedded />
+      </div>
+      <div id={askPanelId} role="tabpanel" aria-labelledby={askTabId} hidden={tab !== 'ask'}>
+        <AssistantPanel onAction={onAction} />
+      </div>
     </aside>
   );
 }

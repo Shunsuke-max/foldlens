@@ -51,8 +51,9 @@ function sampledValues(matrix: number[][], rows: number[], columns: number[]) {
   return finiteValues(values);
 }
 
-function range(start: number, end: number) {
-  return Array.from({ length: Math.max(0, end - start + 1) }, (_, index) => start + index);
+function boundedRange(start: number, end: number, upperBound: number) {
+  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || end < start || end >= upperBound) return [];
+  return Array.from({ length: end - start + 1 }, (_, index) => start + index);
 }
 
 export function reciprocalPaeSummary(matrix: number[][] | undefined, alignedIndices: number[], scoredIndices: number[]): ReciprocalPaeSummary {
@@ -60,8 +61,9 @@ export function reciprocalPaeSummary(matrix: number[][] | undefined, alignedIndi
     const empty = summarize([]);
     return { forward: empty, reverse: empty, reciprocalMean: null, reciprocalMedian: null, lowFraction: null, minimum: null };
   }
-  const forwardValues = sampledValues(matrix, scoredIndices, alignedIndices);
-  const reverseValues = sampledValues(matrix, alignedIndices, scoredIndices);
+  // AF3 defines matrix[i][j] as token j scored in the frame of aligned token i.
+  const forwardValues = sampledValues(matrix, alignedIndices, scoredIndices);
+  const reverseValues = sampledValues(matrix, scoredIndices, alignedIndices);
   const combined = [...forwardValues, ...reverseValues];
   const forward = summarize(forwardValues);
   const reverse = summarize(reverseValues);
@@ -78,10 +80,12 @@ export function reciprocalPaeSummary(matrix: number[][] | undefined, alignedIndi
 
 export function selectionPaeSummary(matrix: number[][] | undefined, selection: Selection) {
   if (!selection) return reciprocalPaeSummary(matrix, [], []);
+  const size = matrix?.length ?? 0;
+  if (!size) return reciprocalPaeSummary(matrix, [], []);
   return reciprocalPaeSummary(
     matrix,
-    range(selection.xStart, selection.xEnd),
-    range(selection.yStart, selection.yEnd),
+    boundedRange(selection.xStart, selection.xEnd, size),
+    boundedRange(selection.yStart, selection.yEnd, size),
   );
 }
 

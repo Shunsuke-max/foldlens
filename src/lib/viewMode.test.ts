@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { colorModeAfterClick } from './viewMode';
+import { colorModeAfterClick, restoredVisibleChainIds } from './viewMode';
 
 describe('colorModeAfterClick', () => {
   it('toggles the selected color layer between Overlay and Surface only', () => {
@@ -10,5 +10,10 @@ describe('colorModeAfterClick', () => {
   it('switches color mode without entering Surface only', () => {
     expect(colorModeAfterClick('chains', 'confidence', true, false)).toEqual({ colorMode: 'confidence', surfaceOnly: false });
     expect(colorModeAfterClick('chains', 'chains', false, false)).toEqual({ colorMode: 'chains', surfaceOnly: false });
+  });
+
+  it('preserves an intentionally empty saved chain visibility set', () => {
+    expect(restoredVisibleChainIds(['A', 'B'], [])).toEqual([]);
+    expect(restoredVisibleChainIds(['A', 'B'], undefined)).toEqual(['A', 'B']);
   });
 });

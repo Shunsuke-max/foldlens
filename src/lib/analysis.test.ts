@@ -39,6 +39,29 @@ describe('confidence analysis', () => {
     expect(formatResidueRanges(ranges)).toBe('Q 1–6 × S 564–566');
     expect(buildAnalysisFacts(demoResult, prediction, selection).selection?.meanPae).not.toBeNull();
     expect(buildAnalysisFacts(demoResult, prediction, selection).selection?.label).toBe('S 564–566 scored on Q 1–6');
+    expect(buildLocalAssistantResponse(buildAnalysisFacts(demoResult, prediction, selection), prediction).evidence[0].action.selection).toEqual(selection);
+  });
+
+  it('does not assign global ipTM to an arbitrary chain pair', () => {
+    const withoutPairFacts = buildAnalysisFacts(demoResult, {
+      ...prediction,
+      summary: { iptm: 0.95, chainIds: ['Q', 'R', 'S'] },
+      confidence: { tokenChainIds: prediction.confidence!.tokenChainIds, tokenResidues: prediction.confidence!.tokenResidues },
+    }, null);
+    expect(withoutPairFacts.primaryInterface).toBeNull();
+    expect(buildLocalAssistantResponse(withoutPairFacts).answer).not.toContain('supports an interface');
+  });
+
+  it('does not recommend PAE inspection when no confidence arrays were loaded', () => {
+    const structureOnly = {
+      ...prediction,
+      summary: {},
+      confidence: { tokenResidues: prediction.confidence!.tokenResidues, tokenChainIds: prediction.confidence!.tokenChainIds },
+    };
+    const facts = buildAnalysisFacts({ ...demoResult, notices: ['No PAE array was found.'] }, structureOnly, null);
+    expect(facts).toMatchObject({ hasPae: false, hasPlddt: false });
+    expect(buildLocalAssistantResponse(facts, structureOnly, 'What should I inspect first?').answer)
+      .toBe('No pLDDT or PAE confidence data was loaded, so FoldLens cannot rank regions by prediction confidence.');
   });
 
   it('converts evidence actions back into PAE selections', () => {

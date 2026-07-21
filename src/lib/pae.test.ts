@@ -8,8 +8,8 @@ describe('PAE statistics', () => {
     for (let y = 0; y < 2; y += 1) for (let x = 2; x < 4; x += 1) matrix[y][x] = 12;
 
     const stats = chainPairPaeSummary(matrix, ['A', 'A', 'B', 'B'], 'A', 'B');
-    expect(stats.forward.mean).toBe(2);
-    expect(stats.reverse.mean).toBe(12);
+    expect(stats.forward.mean).toBe(12);
+    expect(stats.reverse.mean).toBe(2);
     expect(stats.reciprocalMedian).toBe(7);
     expect(stats.lowFraction).toBe(0.5);
   });
@@ -22,9 +22,16 @@ describe('PAE statistics', () => {
       [3, 3, 1, 1],
     ];
     const stats = selectionPaeSummary(matrix, { xStart: 0, xEnd: 1, yStart: 2, yEnd: 3 });
-    expect(stats.forward.mean).toBe(3);
-    expect(stats.reverse.mean).toBe(9);
+    expect(stats.forward.mean).toBe(9);
+    expect(stats.reverse.mean).toBe(3);
     expect(stats.reciprocalMean).toBe(6);
+  });
+
+  it('rejects an out-of-bounds selection without allocating the requested range', () => {
+    const matrix = [[1, 2], [2, 1]];
+    const stats = selectionPaeSummary(matrix, { xStart: 0, xEnd: 1_000_000_000, yStart: 0, yEnd: 1 });
+    expect(stats.reciprocalMean).toBeNull();
+    expect(stats.forward.count).toBe(0);
   });
 
   it('selects a coherent low-PAE window instead of an isolated minimum cell', () => {

@@ -46,6 +46,19 @@ describe('PaeHeatmap', () => {
     expect(screen.getByLabelText('Interactive predicted aligned error heatmap · |ΔPAE|')).toBeTruthy();
   });
 
+  it('uses comparison-specific chain and residue metadata when matrix dimensions differ', () => {
+    const comparison = Array.from({ length: 4 }, (_, y) => Array.from({ length: 4 }, (_, x) => Math.abs(x - y) + 1));
+    render(<PaeHeatmap pae={pae} chainIds={chainIds} selection={null} onSelection={() => undefined} primaryLabel="Model 1" comparison={{ label: 'Model 2', pae: comparison, chainIds: ['X', 'X', 'Y', 'Y'], tokenResidues: [
+      { tokenIndex: 0, chainId: 'X', residueId: '10', residueNumber: 10 },
+      { tokenIndex: 1, chainId: 'X', residueId: '11', residueNumber: 11 },
+      { tokenIndex: 2, chainId: 'Y', residueId: '20', residueNumber: 20 },
+      { tokenIndex: 3, chainId: 'Y', residueId: '21', residueNumber: 21 },
+    ] }} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Model 2' }));
+    expect(screen.getByRole('option', { name: 'X aligned → Y scored' })).toBeTruthy();
+    expect(screen.queryByRole('option', { name: 'A aligned → B scored' })).toBeNull();
+  });
+
   it('announces directional keyboard inspection and selects with Enter', () => {
     const onSelection = vi.fn();
     render(<PaeHeatmap pae={pae} chainIds={chainIds} selection={null} onSelection={onSelection} primaryLabel="Model 1" />);
@@ -55,5 +68,12 @@ describe('PaeHeatmap', () => {
     expect(screen.getByRole('status').textContent).toContain('Scored token 1 · aligned on token 2');
     fireEvent.keyDown(canvas, { key: 'Enter' });
     expect(onSelection).toHaveBeenCalled();
+  });
+
+  it('reads matrix rows as alignment frames and columns as scored tokens', () => {
+    render(<PaeHeatmap pae={[[1, 9], [3, 1]]} chainIds={['A', 'B']} selection={null} onSelection={() => undefined} primaryLabel="Directional" />);
+    const canvas = screen.getByLabelText('Interactive predicted aligned error heatmap · Directional');
+    fireEvent.keyDown(canvas, { key: 'ArrowRight' });
+    expect(screen.getByRole('status').textContent).toContain('Scored token 1 · aligned on token 2 · 3.0 Å');
   });
 });

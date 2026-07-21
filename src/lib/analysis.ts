@@ -65,15 +65,13 @@ function primaryInterface(prediction: Prediction, excludedChainIds = new Set<str
       const row = includedIndices[left].index;
       const column = includedIndices[right].index;
       const iptm = summary.chainPairIptm?.[row]?.[column];
+      const paeMinimum = summary.chainPairPaeMin?.[row]?.[column];
       const stats = chainPairPaeSummary(prediction.confidence?.pae, paeChainIds, ids[row], ids[column]);
-      const score = Number.isFinite(iptm) ? iptm! : stats.reciprocalMedian !== null ? -stats.reciprocalMedian / 40 : Number.NEGATIVE_INFINITY;
-      if (!best || score > best.score) best = { row, column, score, stats };
+      const score = Number.isFinite(iptm) ? iptm! : stats.reciprocalMedian !== null ? -stats.reciprocalMedian / 40 : Number.isFinite(paeMinimum) ? -paeMinimum! / 40 : Number.NEGATIVE_INFINITY;
+      if (Number.isFinite(score) && (!best || score > best.score)) best = { row, column, score, stats };
     }
   }
-  if (!best) return {
-    chainA: includedIndices[0].id, chainB: includedIndices[1].id, iptm: null, paeMin: null,
-    paeMedian: null, paeMean: null, paeForwardMean: null, paeReverseMean: null, lowPaeFraction: null,
-  };
+  if (!best) return null;
   return {
     chainA: ids[best.row],
     chainB: ids[best.column],
@@ -134,6 +132,9 @@ export function buildAnalysisFacts(result: AF3Result, prediction: Prediction, se
     ptm: finite(prediction.summary.ptm),
     iptm: finite(prediction.summary.iptm),
     hasClash: prediction.summary.hasClash ?? null,
+    hasPae: Boolean(prediction.confidence?.pae?.length),
+    hasPlddt: Boolean(prediction.confidence?.tokenPlddts?.length),
+    chainRanges: mergeRanges(tokens.flatMap((token) => token.residueNumber === undefined ? [] : [{ chainId: token.chainId, start: token.residueNumber, end: token.residueNumber }])),
     primaryInterface: primaryInterface(prediction, ligandChainIds),
     domains: (domainRegions ?? inferDomains(result, prediction)).map(({ color, ...domain }) => {
       void color;
@@ -152,6 +153,7 @@ export function buildAnalysisFacts(result: AF3Result, prediction: Prediction, se
       alignedLabel,
       scoredLabel,
       residueRanges: ranges,
+      matrixRange: { ...selection },
     } : null,
     notices: result.notices,
   };
@@ -190,47 +192,47 @@ export function buildLocalAssistantResponse(facts: AnalysisFacts, prediction?: P
     if (domainToInspect.meanPlddt !== null) evidence.push({
       id: `domain-plddt-${domainToInspect.id}`, label: domainToInspect.label, value: `${domainToInspect.chainId} ${domainToInspect.start}–${domainToInspect.end} · ${Math.round(domainToInspect.meanPlddt)}`,
       interpretation: domainToInspect.meanPlddt >= 90 ? 'Very high local confidence' : domainToInspect.meanPlddt >= 70 ? 'Confident local structure' : 'Inspect local geometry cautiously',
-      action: { type: 'show_residues', chainIds: [domainToInspect.chainId], residueRanges: [range] },
+      action: { type: 'show_residues', chainIds: [domainToInspect.chainId], residueRanges: [range], selection: null },
     });
     if (domainToInspect.closestDomainPae !== null && domainToInspect.closestDomainLabel) evidence.push({
       id: `domain-pae-${domainToInspect.id}`, label: 'Nearest domain placement', value: `${domainToInspect.closestDomainPae.toFixed(1)} Å`,
       interpretation: `Relative to ${domainToInspect.closestDomainLabel}`,
-      action: { type: 'show_residues', chainIds: [domainToInspect.chainId], residueRanges: [range] },
+      action: { type: 'show_residues', chainIds: [domainToInspect.chainId], residueRanges: [range], selection: null },
     });
   }
   const interfaceRanges = prediction && primary ? rangesForInterface(prediction, [primary.chainA, primary.chainB]) : [];
   if (primary?.iptm !== null && primary?.iptm !== undefined) evidence.push({
     id: 'interface-iptm', label: `${primary.chainA}–${primary.chainB} ipTM`, value: primary.iptm.toFixed(2),
     interpretation: primary.iptm >= 0.8 ? 'Strong interface-level confidence' : primary.iptm >= 0.6 ? 'Moderate interface-level confidence' : 'Weak interface-level confidence',
-    action: { type: 'show_interface', chainIds: [primary.chainA, primary.chainB], residueRanges: interfaceRanges },
+    action: { type: 'show_interface', chainIds: [primary.chainA, primary.chainB], residueRanges: interfaceRanges, selection: null },
   });
   if (primary?.paeMedian !== null && primary?.paeMedian !== undefined) evidence.push({
     id: 'interface-pae', label: `${primary.chainA}–${primary.chainB} reciprocal median PAE`, value: `${primary.paeMedian.toFixed(1)} Å`,
-    interpretation: `${primary.chainB} on ${primary.chainA}: ${primary.paeForwardMean?.toFixed(1) ?? '—'} Å · ${primary.chainA} on ${primary.chainB}: ${primary.paeReverseMean?.toFixed(1) ?? '—'} Å · ${Math.round((primary.lowPaeFraction ?? 0) * 100)}% ≤5 Å`,
-    action: { type: 'show_interface', chainIds: [primary.chainA, primary.chainB], residueRanges: interfaceRanges },
+    interpretation: `${primary.chainB} scored on ${primary.chainA}: ${primary.paeForwardMean?.toFixed(1) ?? '—'} Å · reverse ${primary.paeReverseMean?.toFixed(1) ?? '—'} Å · ${Math.round((primary.lowPaeFraction ?? 0) * 100)}% ≤5 Å`,
+    action: { type: 'show_interface', chainIds: [primary.chainA, primary.chainB], residueRanges: interfaceRanges, selection: null },
   });
   const low = facts.lowConfidenceRegions[0];
   if (low) evidence.push({
     id: 'local-plddt', label: 'Local pLDDT', value: `${low.chainId} ${low.start}–${low.end} · ${Math.round(low.meanPlddt)}`,
     interpretation: 'Inspect this flexible or weakly resolved region',
-    action: { type: 'show_residues', chainIds: [low.chainId], residueRanges: [{ chainId: low.chainId, start: low.start, end: low.end }] },
+    action: { type: 'show_residues', chainIds: [low.chainId], residueRanges: [{ chainId: low.chainId, start: low.start, end: low.end }], selection: null },
   });
   if (facts.selection?.medianPae !== null && facts.selection?.medianPae !== undefined) evidence.unshift({
     id: 'selected-pae', label: 'Selected reciprocal median PAE', value: `${facts.selection.medianPae.toFixed(1)} Å`,
     interpretation: `${facts.selection.scoredLabel} on ${facts.selection.alignedLabel}: ${facts.selection.forwardMeanPae?.toFixed(1) ?? '—'} Å · reverse ${facts.selection.reverseMeanPae?.toFixed(1) ?? '—'} Å`,
-    action: { type: 'show_selection', chainIds: [...new Set(facts.selection.residueRanges.map((range) => range.chainId))], residueRanges: facts.selection.residueRanges },
+    action: { type: 'show_selection', chainIds: [...new Set(facts.selection.residueRanges.map((range) => range.chainId))], residueRanges: facts.selection.residueRanges, selection: facts.selection.matrixRange },
   });
 
   const asksForBiology = /(drug|clinical|disease|treat|efficacy|mechanism|function|binds? in vivo|biologically correct)/.test(normalizedQuestion);
   const asksForUncertainty = /(uncertain|avoid|caution|least confident|low confidence|weak|unreliable|inspect first)/.test(normalizedQuestion);
   const asksForClash = /(clash|overlap|steric)/.test(normalizedQuestion);
   const asksForSelection = /(selected|selection|this region)/.test(normalizedQuestion) && Boolean(facts.selection);
-  const interfaceIptm = primary?.iptm ?? facts.iptm ?? 0;
+  const interfaceIptm = primary?.iptm ?? 0;
   const interfacePae = primary?.paeMedian;
   const strong = interfaceIptm >= 0.8 && interfacePae !== null && interfacePae !== undefined && interfacePae <= 5;
   const mixedStrong = interfaceIptm >= 0.8 && interfacePae !== null && interfacePae !== undefined && interfacePae <= 10;
   const highIptm = interfaceIptm >= 0.8;
-  const moderate = (primary?.iptm ?? facts.iptm ?? 0) >= 0.6;
+  const moderate = (primary?.iptm ?? 0) >= 0.6;
   let answer: string;
   if (asksForBiology) {
     answer = 'The loaded confidence metrics cannot establish biological function, efficacy, or clinical relevance. They only describe confidence in this prediction.';
@@ -249,7 +251,13 @@ export function buildLocalAssistantResponse(facts: AnalysisFacts, prediction?: P
   } else if (asksForUncertainty) {
     answer = low
       ? `Treat ${low.chainId} ${low.start}–${low.end} most cautiously; its mean pLDDT is ${Math.round(low.meanPlddt)}.`
-      : 'No sustained low-pLDDT region was detected in the loaded confidence data; inspect high-PAE blocks next.';
+      : facts.hasPlddt
+        ? facts.hasPae
+          ? 'No sustained low-pLDDT region was detected; inspect high-PAE blocks next.'
+          : 'No sustained low-pLDDT region was detected, and no PAE matrix was loaded for relative-placement analysis.'
+        : facts.hasPae
+          ? 'No pLDDT values were loaded; inspect high-PAE blocks for relative-placement uncertainty.'
+          : 'No pLDDT or PAE confidence data was loaded, so FoldLens cannot rank regions by prediction confidence.';
   } else {
     answer = strong
       ? `Likely reliable overall${low ? ', with one local caveat' : ''}.`

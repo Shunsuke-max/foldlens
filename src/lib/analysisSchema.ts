@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import type { AnalysisFacts, AssistantResponse, EvidenceAction } from '../types/analysis';
+import type { ResidueRange, Selection } from '../types/af3';
 
 export const ResidueRangeSchema = z.object({
   chainId: z.string().min(1).max(12),
@@ -10,6 +12,12 @@ export const EvidenceActionSchema = z.object({
   type: z.enum(['show_interface', 'show_residues', 'show_selection', 'none']),
   chainIds: z.array(z.string()).max(4),
   residueRanges: z.array(ResidueRangeSchema).max(8),
+  selection: z.object({
+    xStart: z.number().int().nonnegative(),
+    xEnd: z.number().int().nonnegative(),
+    yStart: z.number().int().nonnegative(),
+    yEnd: z.number().int().nonnegative(),
+  }).nullable(),
 });
 
 export const AssistantResponseSchema = z.object({
@@ -33,6 +41,9 @@ export const AssistantRequestSchema = z.object({
     ptm: z.number().nullable(),
     iptm: z.number().nullable(),
     hasClash: z.boolean().nullable(),
+    hasPae: z.boolean(),
+    hasPlddt: z.boolean(),
+    chainRanges: z.array(ResidueRangeSchema).max(128),
     primaryInterface: z.object({
       chainA: z.string(),
       chainB: z.string(),
@@ -68,7 +79,60 @@ export const AssistantRequestSchema = z.object({
       alignedLabel: z.string(),
       scoredLabel: z.string(),
       residueRanges: z.array(ResidueRangeSchema),
+      matrixRange: z.object({
+        xStart: z.number().int().nonnegative(),
+        xEnd: z.number().int().nonnegative(),
+        yStart: z.number().int().nonnegative(),
+        yEnd: z.number().int().nonnegative(),
+      }),
     }).nullable(),
     notices: z.array(z.string()).max(8),
   }),
 });
+
+function sameStrings(actual: string[], expected: string[]) {
+  return actual.length === new Set(actual).size
+    && actual.length === expected.length
+    && [...actual].sort().every((value, index) => value === [...expected].sort()[index]);
+}
+
+function sameSelection(actual: Selection, expected: Selection) {
+  if (!actual || !expected) return actual === expected;
+  return actual.xStart === expected.xStart && actual.xEnd === expected.xEnd
+    && actual.yStart === expected.yStart && actual.yEnd === expected.yEnd;
+}
+
+function rangeWithin(range: ResidueRange, allowed: ResidueRange[]) {
+  return Number.isSafeInteger(range.start) && Number.isSafeInteger(range.end) && range.start <= range.end
+    && allowed.some((candidate) => candidate.chainId === range.chainId && range.start >= candidate.start && range.end <= candidate.end);
+}
+
+function sameRanges(actual: ResidueRange[], expected: ResidueRange[]) {
+  const key = (range: ResidueRange) => `${range.chainId}:${range.start}:${range.end}`;
+  return actual.length === expected.length
+    && actual.map(key).sort().every((value, index) => value === expected.map(key).sort()[index]);
+}
+
+export function isGroundedEvidenceAction(action: EvidenceAction, facts: AnalysisFacts) {
+  if (action.type === 'none') return action.chainIds.length === 0 && action.residueRanges.length === 0 && action.selection === null;
+  if (!action.residueRanges.every((range) => rangeWithin(range, facts.chainRanges))) return false;
+  const actionRangeChains = [...new Set(action.residueRanges.map((range) => range.chainId))];
+  if (action.type === 'show_interface') {
+    const primary = facts.primaryInterface;
+    return Boolean(primary) && action.selection === null
+      && sameStrings(action.chainIds, [primary!.chainA, primary!.chainB])
+      && action.residueRanges.length > 0
+      && actionRangeChains.every((chainId) => action.chainIds.includes(chainId));
+  }
+  if (action.type === 'show_residues') {
+    return action.selection === null && action.residueRanges.length > 0 && sameStrings(action.chainIds, actionRangeChains);
+  }
+  const selection = facts.selection;
+  return Boolean(selection) && sameSelection(action.selection, selection!.matrixRange)
+    && sameRanges(action.residueRanges, selection!.residueRanges)
+    && sameStrings(action.chainIds, [...new Set(selection!.residueRanges.map((range) => range.chainId))]);
+}
+
+export function isGroundedAssistantResponse(response: AssistantResponse, facts: AnalysisFacts) {
+  return response.evidence.every((item) => isGroundedEvidenceAction(item.action, facts));
+}

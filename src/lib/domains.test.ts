@@ -10,6 +10,12 @@ function syntheticResult(pae: number[][], annotations: AF3Result['domainAnnotati
 }
 
 describe('domain inference', () => {
+  it('does not claim PAE-derived regions when no PAE matrix exists', () => {
+    const { result, prediction } = syntheticResult([[1]]);
+    prediction.confidence = { tokenResidues: prediction.confidence!.tokenResidues, tokenChainIds: ['A'] };
+    expect(inferDomains(result, prediction)).toEqual([]);
+  });
+
   it('splits strong diagonal PAE blocks into predicted structural regions', () => {
     const pae = Array.from({ length: 48 }, (_, y) => Array.from({ length: 48 }, (_, x) => Math.floor(x / 24) === Math.floor(y / 24) ? 3 : 18));
     const { result, prediction } = syntheticResult(pae);

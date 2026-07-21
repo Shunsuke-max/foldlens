@@ -6,3 +6,9 @@ export function colorModeAfterClick(current: ColorMode, requested: ColorMode, su
   }
   return { colorMode: requested, surfaceOnly: false };
 }
+
+export function restoredVisibleChainIds(allChainIds: string[], savedChainIds?: string[]) {
+  if (savedChainIds === undefined) return allChainIds;
+  const known = new Set(allChainIds);
+  return savedChainIds.filter((id) => known.has(id));
+}

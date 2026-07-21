@@ -6,7 +6,7 @@ FoldLens
 
 ## Tagline
 
-Review AlphaFold 3 structures, confidence, PAE, and grounded GPT-5.6 evidence in one private workspace.
+Review AlphaFold 3 structures, confidence, PAE, and grounded GPT-5.6 evidence in one local-first workspace.
 
 ## Category
 
@@ -24,7 +24,7 @@ AlphaFold 3 produces rich outputs, but reviewing them still involves switching b
 
 FoldLens opens an AlphaFold 3 ZIP, result folder, structure, or confidence JSON directly in the browser. It automatically matches prediction samples, renders the structure, compares ranking score, ipTM, pTM, and clashes, and links PAE selections to chains and residue ranges in 3D.
 
-Ask FoldLens turns the current view into a compact deterministic fact set. GPT-5.6 receives only those facts and returns a schema-validated answer with evidence actions such as Show interface or Show residues. Raw CIF/JSON files, coordinates, and sequences are not uploaded. If live analysis is unavailable, the same UI falls back to a deterministic local confidence brief and labels it clearly.
+Ask FoldLens turns the current view into a compact deterministic fact set. GPT-5.6 receives the user's question plus those facts and returns a schema-validated answer with evidence actions such as Show interface or Show residues. A second semantic allowlist rejects actions outside the active chains, residue bounds, and PAE selection. Raw CIF/JSON files, coordinates, and sequences are not uploaded. If live analysis is unavailable, the same UI falls back to a deterministic local confidence brief and labels it clearly.
 
 ## How we built it
 
@@ -34,9 +34,9 @@ FoldLens uses React, TypeScript, Vite, Express, 3Dmol.js, fflate, Zod, and the O
 
 Codex was our iterative engineering and design partner. It helped turn usability audits into working flows, implement and test the AlphaFold file matcher and PAE interactions, compare generated design concepts with the rendered product, and expand regression coverage around scientific edge cases.
 
-We used GPT-5.6 inside FoldLens as a constrained interpretation layer. It cannot inspect arbitrary hidden data or invent viewer actions: it receives only deterministic facts already derived by the app, and its schema-validated evidence must point to supplied chains and residue ranges.
+We used GPT-5.6 inside FoldLens as a constrained interpretation layer. It cannot inspect arbitrary hidden data or apply invented viewer actions: it receives the user's question plus deterministic facts already derived by the app, and schema validation plus a semantic allowlist require evidence actions to match the active chains and residue ranges.
 
-The human decisions were to keep source files local, make every AI claim traceable to visible evidence, label illustrative sample values explicitly, and state where confidence stops short of experimental validation.
+The human decisions were to keep source files local, bound AI viewer actions to active evidence, show supporting metrics and caveats with every answer, label illustrative sample values explicitly, and state where confidence stops short of experimental validation.
 
 ## Challenges
 
@@ -51,7 +51,7 @@ The human decisions were to keep source files local, make every AI claim traceab
 - A polished local-first workflow from import to evidence-linked interpretation.
 - Strict separation between raw scientific files, deterministic facts, and GPT-5.6 output.
 - Explicit offline fallback instead of hiding API failure.
-- 34 automated tests covering parsing, analysis, exports, core UI, rate limiting, and safe API fallback behavior.
+- An automated regression suite covering parsing, directional PAE semantics, grounded actions, exports, core UI, accessibility state, rate limiting, and safe API fallback behavior.
 - Desktop and mobile layouts with the same scientific review loop.
 
 ## What we learned
@@ -75,6 +75,12 @@ In scientific tools, the highest-value AI behavior is often not generating more 
 5. Open **Ask FoldLens**, submit the suggested interface question, and use an evidence action.
 6. Use **Open result** to inspect the supported file manifest. No account is required.
 
+Public demo: https://foldlens.vercel.app/
+
+Source repository: https://github.com/Shunsuke-max/foldlens
+
 ## Important limitations
 
 FoldLens interprets confidence outputs; it does not perform structure prediction, docking, screening, clinical analysis, or experimental validation. AlphaFold Server output remains subject to its own terms.
+
+The bundled demo reuses one experimental PDB 1NVV coordinate structure across five clearly labelled illustrative confidence variants. It is not a five-model structural prediction comparison.

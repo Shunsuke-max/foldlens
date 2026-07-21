@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { parseCifTokens, parseEntries } from './af3Parser';
+import { strToU8, zipSync } from 'fflate';
+import { parseCifTokens, parseEntries, parseFiles } from './af3Parser';
 
 describe('parseEntries', () => {
   it('matches structure, summary, and confidence output files', () => {
@@ -40,7 +41,54 @@ describe('parseEntries', () => {
     ].join('\n');
     const parsed = parseCifTokens(cif, ['Q', 'L']);
     expect(parsed.residues.map((token) => `${token.chainId}:${token.residueId}`)).toEqual(['Q:10', 'L:501', 'L:501']);
-    expect(parsed.plddts).toEqual([84, 75, 77]);
+    expect(parsed.bFactors).toEqual([84, 75, 77]);
+  });
+
+  it('rejects an invalid PAE matrix instead of converting null to zero', () => {
+    const result = parseEntries([
+      { path: 'job_model.cif', text: 'data_job' },
+      { path: 'job_confidences.json', text: JSON.stringify({ pae: [[1, null], [null, 1]], token_chain_ids: ['A', 'B'] }) },
+    ], 'job');
+    expect(result.predictions[0].confidence?.pae).toBeUndefined();
+    expect(result.notices).toContain('No PAE array was found; the structure is still available.');
+  });
+
+  it('accepts numeric clash flags emitted by the AF3 reference implementation', () => {
+    const result = parseEntries([
+      { path: 'job_model.cif', text: 'data_job' },
+      { path: 'job_summary_confidences.json', text: JSON.stringify({ has_clash: 1.0, chain_ids: ['A'] }) },
+    ], 'job');
+    expect(result.predictions[0].summary.hasClash).toBe(true);
+  });
+
+  it('does not reinterpret experimental B-factors as pLDDT for a bare CIF', () => {
+    const cif = [
+      'data_test', 'loop_', '_atom_site.group_PDB', '_atom_site.label_atom_id', '_atom_site.label_comp_id',
+      '_atom_site.label_asym_id', '_atom_site.label_seq_id', '_atom_site.B_iso_or_equiv',
+      'ATOM CA ALA A 1 21.0', '#',
+    ].join('\n');
+    const result = parseEntries([{ path: 'experimental.cif', text: cif }], 'experimental.cif');
+    expect(result.predictions[0].confidence?.tokenPlddts).toBeUndefined();
+  });
+
+  it('uses array-shaped AlphaFold Server requests to classify ions', () => {
+    const cif = [
+      'data_test', 'loop_', '_atom_site.group_PDB', '_atom_site.label_atom_id', '_atom_site.label_comp_id',
+      '_atom_site.label_asym_id', '_atom_site.label_seq_id', '_atom_site.B_iso_or_equiv',
+      'ATOM CA ALA A 1 80.0', 'HETATM MG MG B 1 50.0', '#',
+    ].join('\n');
+    const request = [{ name: 'job', sequences: [
+      { proteinChain: { sequence: 'A', count: 1 } },
+      { ion: { ion: 'MG', count: 1 } },
+    ], dialect: 'alphafoldserver', version: 1 }];
+    const result = parseEntries([
+      { path: 'job_model.cif', text: cif },
+      { path: 'job_request.json', text: JSON.stringify(request) },
+    ], 'job');
+    expect(result.chains.map((chain) => [chain.id, chain.kind, chain.label])).toEqual([
+      ['A', 'protein', 'Protein · Chain A'],
+      ['B', 'ligand', 'Ion · MG'],
+    ]);
   });
 
   it('deduplicates the official top-level model copy and preserves sample identity', () => {
@@ -110,5 +158,17 @@ describe('parseEntries', () => {
 
   it('fails explicitly for zstandard-compressed AF3 output', () => {
     expect(() => parseEntries([{ path: 'job_model.cif.zst', text: 'compressed' }], 'job.zip')).toThrow(/\.zst-compressed/);
+  });
+
+  it('opens a real ZIP boundary and matches one prediction end to end', async () => {
+    const archive = zipSync({
+      'job/seed-1_sample-0/job_model.cif': strToU8('data_job'),
+      'job/seed-1_sample-0/job_summary_confidences.json': strToU8(JSON.stringify({ ranking_score: 0.91, chain_ids: ['A'] })),
+      'job/seed-1_sample-0/job_confidences.json': strToU8(JSON.stringify({ pae: [[1]], token_chain_ids: ['A'] })),
+    });
+    const file = new File([archive], 'job.zip', { type: 'application/zip' });
+    const result = await parseFiles([file]);
+    expect(result.predictions[0].summary.rankingScore).toBe(0.91);
+    expect(result.predictions[0].confidence?.pae).toEqual([[1]]);
   });
 });

@@ -57,13 +57,28 @@ function scalar(value: unknown): number | undefined {
 }
 
 function boolean(value: unknown): boolean | undefined {
-  return typeof value === 'boolean' ? value : undefined;
+  if (typeof value === 'boolean') return value;
+  if (value === 0 || value === 0.0) return false;
+  if (value === 1 || value === 1.0) return true;
+  return undefined;
 }
 
 function numberMatrix(value: unknown): number[][] | undefined {
-  if (!Array.isArray(value)) return undefined;
-  const rows = value.filter(Array.isArray).map((row) => row.map(Number).filter(Number.isFinite));
-  return rows.length > 0 && rows.every((row) => row.length > 0) ? rows : undefined;
+  if (!Array.isArray(value) || value.length === 0) return undefined;
+  const rows: number[][] = [];
+  let width: number | undefined;
+  for (const candidate of value) {
+    if (!Array.isArray(candidate) || candidate.length === 0) return undefined;
+    if (width === undefined) width = candidate.length;
+    if (candidate.length !== width || candidate.some((item) => typeof item !== 'number' || !Number.isFinite(item))) return undefined;
+    rows.push(candidate as number[]);
+  }
+  return rows;
+}
+
+function squareNumberMatrix(value: unknown) {
+  const matrix = numberMatrix(value);
+  return matrix?.every((row) => row.length === matrix.length) ? matrix : undefined;
 }
 
 function stringArray(value: unknown): string[] | undefined {
@@ -85,10 +100,10 @@ function tokenizeCifRow(line: string) {
   }) ?? [];
 }
 
-export function parseCifTokens(cif: string, expectedChainIds?: string[]): { residues: TokenResidue[]; plddts: number[] } {
+export function parseCifTokens(cif: string, expectedChainIds?: string[]): { residues: TokenResidue[]; bFactors: number[] } {
   const lines = cif.split(/\r?\n/);
   const loopIndex = lines.findIndex((line, index) => line.trim() === 'loop_' && lines[index + 1]?.trim().startsWith('_atom_site.'));
-  if (loopIndex < 0) return { residues: [], plddts: [] };
+  if (loopIndex < 0) return { residues: [], bFactors: [] };
 
   const headers: string[] = [];
   let rowIndex = loopIndex + 1;
@@ -124,7 +139,7 @@ export function parseCifTokens(cif: string, expectedChainIds?: string[]): { resi
   const chainColumn = authHits >= labelHits && authChainColumn >= 0 ? authChainColumn : labelChainColumn;
   const seqColumn = chainColumn === authChainColumn && authSeqColumn >= 0 ? authSeqColumn : labelSeqColumn;
   const compColumn = chainColumn === authChainColumn && authCompColumn >= 0 ? authCompColumn : labelCompColumn;
-  if (chainColumn < 0 || seqColumn < 0) return { residues: [], plddts: [] };
+  if (chainColumn < 0 || seqColumn < 0) return { residues: [], bFactors: [] };
 
   const tokens: Array<{ residue: TokenResidue; values: number[] }> = [];
   const tokenByKey = new Map<string, number>();
@@ -150,6 +165,7 @@ export function parseCifTokens(cif: string, expectedChainIds?: string[]): { resi
           residueId,
           residueNumber: Number.isFinite(parsedNumber) ? parsedNumber : undefined,
           residueName,
+          isHetero: group === 'HETATM',
         },
         values: [],
       });
@@ -160,10 +176,16 @@ export function parseCifTokens(cif: string, expectedChainIds?: string[]): { resi
 
   return {
     residues: tokens.map((token) => token.residue),
-    plddts: tokens.map((token) => token.values.length
+    bFactors: tokens.map((token) => token.values.length
       ? token.values.reduce((sum, value) => sum + value, 0) / token.values.length
       : Number.NaN),
   };
+}
+
+function isAlphaFoldGeneratedCif(cif: string) {
+  if (/_ma_qa_metric(?:_local)?\./i.test(cif)) return true;
+  const softwareMetadata = cif.search(/_software\.name/i);
+  return softwareMetadata >= 0 && /\bAlphaFold(?:Server|\s+3)?\b/i.test(cif.slice(softwareMetadata, softwareMetadata + 4096));
 }
 
 function parseSummary(value: Record<string, unknown>): AF3Summary | null {
@@ -176,20 +198,20 @@ function parseSummary(value: Record<string, unknown>): AF3Summary | null {
     chainIds: stringArray(value.chain_ids ?? value.chainIds),
     chainPtm: numberArray(value.chain_ptm ?? value.chainPtm),
     chainIptm: numberArray(value.chain_iptm ?? value.chainIptm),
-    chainPairIptm: numberMatrix(value.chain_pair_iptm ?? value.chainPairIptm),
-    chainPairPaeMin: numberMatrix(value.chain_pair_pae_min ?? value.chainPairPaeMin),
+    chainPairIptm: squareNumberMatrix(value.chain_pair_iptm ?? value.chainPairIptm),
+    chainPairPaeMin: squareNumberMatrix(value.chain_pair_pae_min ?? value.chainPairPaeMin),
   };
   return Object.values(summary).some((item) => item !== undefined) ? summary : null;
 }
 
 function parseConfidence(value: Record<string, unknown>): AF3Confidence | null {
   const confidence: AF3Confidence = {
-    pae: numberMatrix(value.pae ?? value.full_pae ?? value.predicted_aligned_error),
+    pae: squareNumberMatrix(value.pae ?? value.full_pae ?? value.predicted_aligned_error),
     tokenChainIds: stringArray(value.token_chain_ids ?? value.tokenChainIds),
     tokenPlddts: numberArray(value.token_plddts ?? value.tokenPlddts),
     atomPlddts: numberArray(value.atom_plddts ?? value.atomPlddts),
     atomChainIds: stringArray(value.atom_chain_ids ?? value.atomChainIds),
-    contactProbs: numberMatrix(value.contact_probs ?? value.contactProbs),
+    contactProbs: squareNumberMatrix(value.contact_probs ?? value.contactProbs),
   };
   return Object.values(confidence).some((item) => item !== undefined) ? confidence : null;
 }
@@ -230,6 +252,7 @@ function entityHints(entries: JsonEntry[]): Map<string, EntityHint> {
   const result = new Map<string, EntityHint>();
   for (const entry of entries) {
     const sequences = Array.isArray(entry.value.sequences) ? entry.value.sequences : [];
+    let implicitChainIndex = 0;
     for (const item of sequences) {
       if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
       const record = item as Record<string, unknown>;
@@ -245,8 +268,23 @@ function entityHints(entries: JsonEntry[]): Map<string, EntityHint> {
         const entity = raw as Record<string, unknown>;
         const sequence = typeof entity.sequence === 'string' ? entity.sequence : undefined;
         const ligandName = stringArray(entity.ccdCodes ?? entity.ccd_codes)?.join(', ')
+          ?? (typeof entity.ligand === 'string' ? entity.ligand.replace(/^CCD_/i, '') : undefined)
+          ?? (typeof entity.ion === 'string' ? entity.ion : undefined)
           ?? (typeof entity.smiles === 'string' ? 'custom ligand' : undefined);
-        for (const id of idsFor(entity.id ?? entity.ids)) {
+        const count = Math.floor(Math.max(1, Math.min(64, scalar(entity.count) ?? 1)));
+        const explicitIds = idsFor(entity.id ?? entity.ids);
+        if (explicitIds.length) implicitChainIndex += count;
+        const resolvedIds = explicitIds.length ? explicitIds : Array.from({ length: count }, () => {
+          const index = implicitChainIndex++;
+          let value = index;
+          let id = '';
+          do {
+            id = String.fromCharCode(65 + value % 26) + id;
+            value = Math.floor(value / 26) - 1;
+          } while (value >= 0);
+          return id;
+        });
+        for (const id of resolvedIds) {
           result.set(id, {
             kind,
             label: kind === 'ligand' && ligandName ? `${name} · ${ligandName}` : `${name} · Chain ${id}`,
@@ -268,7 +306,7 @@ function cifEntityHints(cif: string, expectedChainIds?: string[]): Map<string, E
     const uniqueResidues = new Set(residues.map((residue) => residue.residueId));
     const names = residues.map((residue) => residue.residueName ?? '').filter(Boolean);
     const nucleic = names.length > 0 && names.every((name) => NUCLEOTIDES.has(name.toUpperCase()));
-    const ligand = uniqueResidues.size <= 2 && residues.length > uniqueResidues.size * 2;
+    const ligand = residues.every((residue) => residue.isHetero) || uniqueResidues.size <= 2 && residues.length > uniqueResidues.size * 2;
     const kind: ChainInfo['kind'] = nucleic ? 'nucleic' : ligand ? 'ligand' : 'protein';
     const numbers = residues.map((residue) => residue.residueNumber).filter((value): value is number => value !== undefined);
     const range = numbers.length ? `${Math.min(...numbers)}–${Math.max(...numbers)}` : undefined;
@@ -294,8 +332,13 @@ function parseJsonEntries(entries: TextEntry[]) {
   const parsed: JsonEntry[] = [];
   for (const entry of entries.filter((item) => JSON_EXT.test(item.path))) {
     try {
-      const value = JSON.parse(entry.text);
-      if (value && typeof value === 'object' && !Array.isArray(value)) parsed.push({ ...entry, value });
+      const value: unknown = JSON.parse(entry.text);
+      if (value && typeof value === 'object' && !Array.isArray(value)) parsed.push({ ...entry, value: value as Record<string, unknown> });
+      if (Array.isArray(value)) {
+        value.forEach((item) => {
+          if (item && typeof item === 'object' && !Array.isArray(item)) parsed.push({ ...entry, value: item as Record<string, unknown> });
+        });
+      }
     } catch {
       // Unrelated or partial JSON should not prevent the structure from opening.
     }
@@ -348,7 +391,7 @@ export function parseEntries(entries: TextEntry[], sourceName: string): AF3Resul
         ...parsedConfidence,
         tokenChainIds: parsedConfidence?.tokenChainIds ?? (alignedTokens ? cifTokens.residues.map((token) => token.chainId) : undefined),
         tokenResidues: alignedTokens ? cifTokens.residues : undefined,
-        tokenPlddts: parsedConfidence?.tokenPlddts ?? (alignedTokens && cifTokens.plddts.every(Number.isFinite) ? cifTokens.plddts : undefined),
+        tokenPlddts: parsedConfidence?.tokenPlddts ?? ((parsedConfidence || isAlphaFoldGeneratedCif(cif.text)) && alignedTokens && cifTokens.bFactors.every(Number.isFinite) ? cifTokens.bFactors : undefined),
       } : undefined,
     };
   });
@@ -359,7 +402,9 @@ export function parseEntries(entries: TextEntry[], sourceName: string): AF3Resul
   const top = predictions[0];
   const notices: string[] = [];
   if (!top.confidence?.pae) notices.push('No PAE array was found; the structure is still available.');
-  const invalidJsonCount = entries.filter((entry) => JSON_EXT.test(entry.path)).length - jsonEntries.length;
+  if (!top.confidence?.tokenPlddts?.length) notices.push('No AlphaFold pLDDT values were found; experimental B-factors are not interpreted as confidence.');
+  const parsedJsonPaths = new Set(jsonEntries.map((entry) => entry.path));
+  const invalidJsonCount = entries.filter((entry) => JSON_EXT.test(entry.path) && !parsedJsonPaths.has(entry.path)).length;
   if (invalidJsonCount > 0) notices.push(`${invalidJsonCount} JSON ${invalidJsonCount === 1 ? 'file was' : 'files were'} ignored because the content was not a supported object.`);
   const duplicateCount = rawCifs.length - cifEntries.length;
   if (duplicateCount) notices.push(`${duplicateCount} duplicate top-level structure ${duplicateCount === 1 ? 'copy was' : 'copies were'} removed.`);

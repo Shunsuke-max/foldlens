@@ -25,7 +25,7 @@ FoldLens keeps that review loop in one workspace. It does not claim that confide
 - Use responsive Structure, PAE, Models, and Insights views on mobile.
 - Keep structure parsing in the browser; FoldLens does not upload the source CIF, JSON files, atomic coordinates, or sequences to its server.
 
-The bundled sample is clearly labelled. Its structure is the experimental PDB entry 1NVV and its confidence values are illustrative, not AlphaFold output.
+The bundled sample is clearly labelled. All five sample entries reuse the same experimental PDB 1NVV coordinates; only their illustrative confidence variants differ. They are not AlphaFold outputs and their overlay is not a structural comparison.
 
 ## How GPT-5.6 is used
 
@@ -52,7 +52,7 @@ Codex was used as an iterative engineering and product-design partner throughout
 - helped generate and compare design concepts, then record intentional deviations in fidelity ledgers;
 - expanded regression coverage while investigating parser edge cases, confidence semantics, and viewer interactions.
 
-The key human decisions were to keep raw scientific files local, send only derived facts to GPT-5.6, make every AI claim traceable to visible evidence, label the sample truthfully, and prefer explicit scientific limitations over a more impressive but misleading demo.
+The key human decisions were to keep raw scientific files local, send only the user's question plus derived facts to GPT-5.6, bound viewer actions to the active model, show evidence and caveats with each answer, label the sample truthfully, and prefer explicit scientific limitations over a more impressive but misleading demo.
 
 ## Architecture
 
@@ -66,7 +66,7 @@ server/rateLimit.ts           public demo request limiter
 server/index.ts               Express API and Vite/production app server
 ```
 
-Raw result files remain in the browser. Only the compact, schema-limited analysis facts shown in the UI are sent to `/api/analyze`.
+Raw result files remain in the browser. Only the user's question and the compact, schema-limited analysis facts shown in the UI are sent to `/api/analyze`.
 
 ## Run locally
 
@@ -143,4 +143,4 @@ Pushes to the repository deploy both services through their Git integrations. Re
 - Molecular rendering uses [3Dmol.js](https://3dmol.org/) under the BSD-3-Clause license.
 - Full notices are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
-The bundled sample's confidence values are illustrative and labelled as such throughout the interface.
+The bundled sample's confidence values are illustrative and labelled as such throughout the interface. Its five confidence variants deliberately reuse one experimental coordinate set and must not be presented as five independently predicted structures.

@@ -19,6 +19,7 @@ export function AppHeader({ jobName, isDemo, onOpen, onExportReport, onSaveSessi
       if (event instanceof KeyboardEvent && event.key !== 'Escape') return;
       if (event instanceof MouseEvent && menuRef.current?.contains(event.target as Node)) return;
       setMenuOpen(false);
+      if (event instanceof KeyboardEvent) window.requestAnimationFrame(() => menuButtonRef.current?.focus());
     };
     document.addEventListener('mousedown', close);
     document.addEventListener('keydown', close);
@@ -31,7 +32,7 @@ export function AppHeader({ jobName, isDemo, onOpen, onExportReport, onSaveSessi
       <div className="brand"><BrandMark /><strong>FoldLens</strong></div>
       <div className="job-heading">
         <strong>{jobName}</strong>
-        <span className={isDemo ? 'demo-status' : ''}><i />{isDemo ? 'Sample data · confidence values are illustrative' : 'Private · processed on this device'}</span>
+        <span className={isDemo ? 'demo-status' : ''}><i />{isDemo ? 'Sample · one structure with illustrative confidence variants' : 'Local-first · source files stay on this device'}</span>
       </div>
       <div className="header-actions" ref={menuRef}>
         <button className="button secondary" type="button" onClick={onOpen}><Icon name="folder" />Open result</button>

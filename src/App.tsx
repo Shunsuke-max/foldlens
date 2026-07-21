@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { AppHeader } from './components/AppHeader';
 import { ComparisonSummary } from './components/ComparisonSummary';
 import { FocusModeControl } from './components/FocusModeControl';
@@ -8,17 +8,19 @@ import { OpenResultDialog } from './components/OpenResultDialog';
 import { PaeHeatmap } from './components/PaeHeatmap';
 import { PredictionRail } from './components/PredictionRail';
 import { ScoreStrip } from './components/ScoreStrip';
-import { ViewerToolbar, type ColorMode } from './components/ViewerToolbar';
+import { BrightnessControl, ViewerToolbar, type ColorMode } from './components/ViewerToolbar';
 import { WorkspaceInspector } from './components/WorkspaceInspector';
+import { AssistantSessionProvider } from './components/AssistantPanel';
 import { WelcomeScreen } from './components/WelcomeScreen';
 import { Icon } from './components/Icon';
 import { buildAnalysisFacts, interfaceSelection, rangesSelection, selectionResidueRanges } from './lib/analysis';
 import { parseFiles } from './lib/af3Parser';
-import { buildHtmlReport, createSession, downloadHtmlReport, downloadSession, parseSessionFile } from './lib/export';
+import { buildHtmlReport, createPaeSnapshot, createSession, downloadHtmlReport, downloadSession, parseSessionFile } from './lib/export';
 import { demoResult, loadDemoResult } from './lib/demo';
 import { inferDomains } from './lib/domains';
 import { ligandFocusFromChains } from './lib/focusMode';
-import { colorModeAfterClick } from './lib/viewMode';
+import { colorModeAfterClick, restoredVisibleChainIds } from './lib/viewMode';
+import { isGroundedEvidenceAction } from './lib/analysisSchema';
 import type { AF3Result, FocusMode, FoldLensViewState, Selection } from './types/af3';
 import type { EvidenceAction } from './types/analysis';
 
@@ -42,6 +44,7 @@ export default function App() {
   const [compareId, setCompareId] = useState<string>();
   const [visibleChains, setVisibleChains] = useState(() => new Set(demoResult.chains.map((chain) => chain.id)));
   const [colorMode, setColorMode] = useState<ColorMode>('chains');
+  const [brightness, setBrightness] = useState(100);
   const [surface, setSurface] = useState(false);
   const [surfaceOnly, setSurfaceOnly] = useState(false);
   const [focusMode, setFocusMode] = useState<FocusMode>('all');
@@ -69,12 +72,32 @@ export default function App() {
   const analysisFacts = useMemo(() => buildAnalysisFacts(result, prediction, selection, domains), [domains, result, prediction, selection]);
   const comparisonFacts = useMemo(() => comparePrediction ? buildAnalysisFacts(result, comparePrediction, selection) : undefined, [comparePrediction, result, selection]);
   const selectionLabel = analysisFacts.selection?.label;
+  const confidenceAvailable = Boolean(prediction.confidence?.tokenPlddts?.some(Number.isFinite));
   const ligandFocus = useMemo(() => ligandFocusFromChains(result.chains), [result.chains]);
   const interfaceChains = analysisFacts.primaryInterface
     ? [analysisFacts.primaryInterface.chainA, analysisFacts.primaryInterface.chainB] as [string, string]
     : undefined;
   const domainSource = domains.every((domain) => domain.source === 'pae') ? 'pae'
     : domains.some((domain) => domain.source === 'pae') ? 'mixed' : 'annotation';
+
+  useEffect(() => {
+    const warm = () => { if (document.visibilityState === 'visible') void fetch('/api/health', { cache: 'no-store' }).catch(() => undefined); };
+    warm();
+    const interval = window.setInterval(warm, 10 * 60 * 1000);
+    document.addEventListener('visibilitychange', warm);
+    return () => { window.clearInterval(interval); document.removeEventListener('visibilitychange', warm); };
+  }, []);
+
+  useEffect(() => {
+    if (workspaceOpen) window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+  }, [result, workspaceOpen]);
+
+  const showOpenDialog = () => {
+    setError(undefined);
+    setPendingResult(undefined);
+    setPendingView(undefined);
+    setDialogOpen(true);
+  };
 
   const openFiles = async (files: File[]) => {
     setBusy(true);
@@ -99,13 +122,16 @@ export default function App() {
     if (!pendingResult) return;
     const defaultId = pendingResult.predictions[0].id;
     const selected = pendingResult.predictions.some((item) => item.id === pendingView?.selectedId) ? pendingView!.selectedId : defaultId;
-    const chainIds = new Set(pendingResult.chains.map((chain) => chain.id));
-    const visible = pendingView?.visibleChains.filter((id) => chainIds.has(id));
+    const allChainIds = pendingResult.chains.map((chain) => chain.id);
+    const visible = restoredVisibleChainIds(allChainIds, pendingView?.visibleChains);
     setResult(pendingResult);
     setSelectedId(selected);
     setCompareId(pendingResult.predictions.some((item) => item.id === pendingView?.compareId && item.id !== selected) ? pendingView?.compareId : undefined);
-    setVisibleChains(new Set(visible?.length ? visible : pendingResult.chains.map((chain) => chain.id)));
-    setColorMode(pendingView?.colorMode ?? 'chains');
+    setVisibleChains(new Set(visible));
+    const selectedPrediction = pendingResult.predictions.find((item) => item.id === selected) ?? pendingResult.predictions[0];
+    const selectedHasPlddt = Boolean(selectedPrediction.confidence?.tokenPlddts?.some(Number.isFinite));
+    setColorMode(pendingView?.colorMode === 'confidence' && selectedHasPlddt ? 'confidence' : 'chains');
+    setBrightness(Math.min(140, Math.max(60, pendingView?.brightness ?? 100)));
     setSelection(pendingView?.selection ?? null);
     setSurface(pendingView?.surface ?? false);
     setSurfaceOnly(pendingView?.surfaceOnly ?? false);
@@ -128,6 +154,7 @@ export default function App() {
       setCompareId(undefined);
       setVisibleChains(new Set(loaded.chains.map((chain) => chain.id)));
       setColorMode('chains');
+      setBrightness(100);
       setSurface(false);
       setSurfaceOnly(false);
       setFocusMode('all');
@@ -151,6 +178,7 @@ export default function App() {
   };
 
   const selectColorMode = (mode: ColorMode) => {
+    if (mode === 'confidence' && !confidenceAvailable) return;
     const next = colorModeAfterClick(colorMode, mode, surface, surfaceOnly);
     setColorMode(next.colorMode);
     setSurfaceOnly(next.surfaceOnly);
@@ -203,7 +231,7 @@ export default function App() {
     const html = buildHtmlReport({
       result, prediction, facts: analysisFacts, selectionLabel,
       structureImage: canvasImage(mobile ? '.mobile-viewer .molecule-host canvas' : '.viewer-pane .molecule-host canvas'),
-      paeImage: canvasImage(mobile ? '.pae-panel.compact canvas' : '.desktop-workspace .pae-panel canvas'),
+      paeImage: mobile ? createPaeSnapshot(prediction.confidence?.pae) : canvasImage('.desktop-workspace .pae-panel canvas'),
     });
     downloadHtmlReport(result.jobName, html);
     setToast('Confidence report exported');
@@ -211,7 +239,7 @@ export default function App() {
   };
 
   const saveSession = () => {
-    downloadSession(createSession(result, { selectedId: prediction.id, compareId: comparePrediction?.id, visibleChains: [...visibleChains], colorMode, surface, surfaceOnly, focusMode, selectedDomainId, selection }));
+    downloadSession(createSession(result, { selectedId: prediction.id, compareId: comparePrediction?.id, visibleChains: [...visibleChains], colorMode, brightness, surface, surfaceOnly, focusMode, selectedDomainId, selection }));
     setToast('Resumable FoldLens session saved');
     window.setTimeout(() => setToast(undefined), 3200);
   };
@@ -222,15 +250,24 @@ export default function App() {
     setSelection(null);
     setFocusMode('all');
     setSelectedDomainId(undefined);
+    const nextPrediction = result.predictions.find((item) => item.id === id);
+    if (colorMode === 'confidence' && !nextPrediction?.confidence?.tokenPlddts?.some(Number.isFinite)) setColorMode('chains');
   };
 
   const runEvidenceAction = (action: EvidenceAction) => {
+    if (!isGroundedEvidenceAction(action, analysisFacts)) {
+      setToast('This evidence action was rejected because it does not match the active model');
+      window.setTimeout(() => setToast(undefined), 3200);
+      return;
+    }
     let nextSelection: Selection = null;
     if (action.type === 'show_interface' && action.chainIds.length >= 2) {
       nextSelection = interfaceSelection(prediction, action.chainIds[0], action.chainIds[1]);
       setFocusMode('interface');
       setSurface(false);
       setSurfaceOnly(false);
+    } else if (action.type === 'show_selection' && action.selection) {
+      nextSelection = action.selection;
     } else if (action.residueRanges.length) {
       nextSelection = rangesSelection(prediction, action.residueRanges);
     }
@@ -250,6 +287,7 @@ export default function App() {
   ];
 
   return (
+    <AssistantSessionProvider facts={analysisFacts} prediction={prediction} focusMode={focusMode}>
     <div
       className="app"
       onDragEnter={(event) => { event.preventDefault(); setDragging(true); }}
@@ -258,19 +296,22 @@ export default function App() {
       onDrop={(event) => { event.preventDefault(); setDragging(false); void openFiles(Array.from(event.dataTransfer.files)); }}
     >
       {!workspaceOpen ? <WelcomeScreen demoBusy={demoBusy} onFiles={(files) => void openFiles(files)} onDemo={() => void openDemo()} /> : <>
-      <AppHeader jobName={result.jobName} isDemo={result.isDemo} onOpen={() => { setError(undefined); setPendingResult(undefined); setPendingView(undefined); setDialogOpen(true); }} onExportReport={exportReport} onSaveSession={saveSession} />
+      <AppHeader jobName={result.jobName} isDemo={result.isDemo} onOpen={showOpenDialog} onExportReport={exportReport} onSaveSession={saveSession} />
 
       <main className="desktop-workspace">
         <div className="workspace-main">
-          <PredictionRail predictions={result.predictions} selectedId={prediction.id} compareId={comparePrediction?.id} onSelect={selectPrediction} onCompare={setCompareId} onOpen={() => setDialogOpen(true)} />
+          <PredictionRail predictions={result.predictions} selectedId={prediction.id} compareId={comparePrediction?.id} onSelect={selectPrediction} onCompare={setCompareId} onOpen={showOpenDialog} />
           <section className="viewer-pane">
             <ViewerToolbar
               colorMode={colorMode}
               surface={surface}
               surfaceOnly={surfaceOnly}
               colorModeSuppressed={focusMode === 'domains'}
+              confidenceAvailable={confidenceAvailable}
+              brightness={brightness}
               onColorMode={selectColorMode}
               onSurface={toggleSurface}
+              onBrightness={setBrightness}
               onReset={() => setResetSignal((value) => value + 1)}
               onExpand={() => document.querySelector('.viewer-pane')?.requestFullscreen?.()}
             />
@@ -284,7 +325,7 @@ export default function App() {
               domainSource={domainSource}
               onChange={selectFocusMode}
             />
-            {result.isDemo && <button className="demo-ribbon" type="button" onClick={() => setDialogOpen(true)}><strong>Sample data</strong><span>Confidence values are illustrative</span><b>Open your result</b></button>}
+            {result.isDemo && <button className="demo-ribbon" type="button" onClick={showOpenDialog}><strong>Sample data</strong><span>One experimental structure · illustrative confidence variants</span><b>Open your result</b></button>}
             {comparePrediction && <ComparisonSummary primary={prediction} comparison={comparePrediction} primarySelection={analysisFacts.selection} comparisonSelection={comparisonFacts?.selection} onClose={() => setCompareId(undefined)} />}
             <MoleculeViewer
               cif={prediction.cif}
@@ -294,6 +335,7 @@ export default function App() {
               chains={result.chains}
               visibleChains={visibleChains}
               colorMode={colorMode}
+              brightness={brightness}
               surface={surface}
               surfaceOnly={surfaceOnly}
               onSurfaceOnly={setSurfaceOnly}
@@ -310,7 +352,7 @@ export default function App() {
               resetSignal={resetSignal}
             />
           </section>
-          <WorkspaceInspector prediction={prediction} facts={analysisFacts} chains={result.chains} visibleChains={visibleChains} onToggleChain={toggleChain} notices={result.notices} focusMode={focusMode} onAction={runEvidenceAction} />
+          <WorkspaceInspector prediction={prediction} chains={result.chains} visibleChains={visibleChains} onToggleChain={toggleChain} notices={result.notices} onAction={runEvidenceAction} />
         </div>
         <PaeHeatmap
           pae={prediction.confidence?.pae}
@@ -321,7 +363,7 @@ export default function App() {
           onSelection={setSelection}
           selectionLabel={selectionLabel}
           primaryLabel={prediction.label}
-          comparison={comparePrediction ? { label: comparePrediction.label, pae: comparePrediction.confidence?.pae, selectionStats: comparisonFacts?.selection } : undefined}
+          comparison={comparePrediction ? { label: comparePrediction.label, pae: comparePrediction.confidence?.pae, chainIds: comparePrediction.confidence?.tokenChainIds, tokenResidues: comparePrediction.confidence?.tokenResidues, selectionStats: comparisonFacts?.selection } : undefined}
         />
       </main>
 
@@ -329,8 +371,10 @@ export default function App() {
         <section className="mobile-viewer">
           <div className="mobile-viewer-actions">
             <button className="icon-button" type="button" onClick={() => document.querySelector('.mobile-viewer')?.requestFullscreen?.()} aria-label="Expand structure"><Icon name="expand" /></button>
+            <span className="mobile-action-spacer" />
             <button className="icon-button" type="button" onClick={() => setResetSignal((value) => value + 1)} aria-label="Reset view"><Icon name="reset" /></button>
-            <button className={`icon-button ${focusMode !== 'domains' && colorMode === 'chains' ? 'active' : ''}`} type="button" aria-pressed={focusMode !== 'domains' && colorMode === 'chains'} onClick={() => selectColorMode(colorMode === 'chains' ? 'confidence' : 'chains')} aria-label="Toggle chain and confidence coloring"><Icon name="palette" /></button>
+            <BrightnessControl brightness={brightness} onBrightness={setBrightness} />
+            <button className={`icon-button ${focusMode !== 'domains' && colorMode === 'chains' ? 'active' : ''}`} type="button" aria-pressed={focusMode !== 'domains' && colorMode === 'chains'} disabled={!confidenceAvailable} title={confidenceAvailable ? 'Toggle chain and confidence coloring' : 'No AlphaFold pLDDT values were loaded'} onClick={() => selectColorMode(colorMode === 'chains' ? 'confidence' : 'chains')} aria-label="Toggle chain and confidence coloring"><Icon name="palette" /></button>
           </div>
           <MoleculeViewer
             cif={prediction.cif}
@@ -340,6 +384,7 @@ export default function App() {
             chains={result.chains}
             visibleChains={visibleChains}
             colorMode={colorMode}
+            brightness={brightness}
             surface={false}
             focusMode={focusMode}
             interfaceChains={interfaceChains}
@@ -362,26 +407,34 @@ export default function App() {
             domainSource={domainSource}
             onChange={selectFocusMode}
           />
-          {result.isDemo && <button className="demo-ribbon" type="button" onClick={() => setDialogOpen(true)}><strong>Sample data</strong><span>Illustrative confidence</span><b>Open</b></button>}
+          {result.isDemo && <button className="demo-ribbon" type="button" onClick={showOpenDialog}><strong>Sample data</strong><span>One structure · illustrative confidence</span><b>Open</b></button>}
           {comparePrediction && <ComparisonSummary primary={prediction} comparison={comparePrediction} primarySelection={analysisFacts.selection} comparisonSelection={comparisonFacts?.selection} onClose={() => setCompareId(undefined)} />}
         </section>
         <ScoreStrip summary={prediction.summary} compact />
-        <nav className="mobile-tabs" aria-label="Result sections">
-          {tabs.map((tab) => <button type="button" className={mobileTab === tab.id ? 'active' : ''} key={tab.id} onClick={() => setMobileTab(tab.id)}>{tab.label}</button>)}
+        <nav className="mobile-tabs" role="tablist" aria-label="Result sections" onKeyDown={(event) => {
+          if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+          event.preventDefault();
+          const current = tabs.findIndex((tab) => tab.id === mobileTab);
+          const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (current + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+          setMobileTab(tabs[next].id);
+          window.requestAnimationFrame(() => document.getElementById(`mobile-tab-${tabs[next].id}`)?.focus());
+        }}>
+          {tabs.map((tab) => <button id={`mobile-tab-${tab.id}`} type="button" role="tab" aria-selected={mobileTab === tab.id} aria-controls={`mobile-panel-${tab.id}`} tabIndex={mobileTab === tab.id ? 0 : -1} className={mobileTab === tab.id ? 'active' : ''} key={tab.id} onClick={() => setMobileTab(tab.id)}>{tab.label}</button>)}
         </nav>
         <div className="mobile-tab-content">
-          {mobileTab === 'structure' && <Inspector summary={prediction.summary} chains={result.chains} visibleChains={visibleChains} onToggleChain={toggleChain} notices={result.notices} />}
-          {mobileTab === 'pae' && <PaeHeatmap pae={prediction.confidence?.pae} chainIds={prediction.confidence?.tokenChainIds} tokenResidues={prediction.confidence?.tokenResidues} selection={selection} selectionStats={analysisFacts.selection} onSelection={setSelection} selectionLabel={selectionLabel} primaryLabel={prediction.label} comparison={comparePrediction ? { label: comparePrediction.label, pae: comparePrediction.confidence?.pae, selectionStats: comparisonFacts?.selection } : undefined} compact />}
-          {mobileTab === 'models' && <PredictionRail predictions={result.predictions} selectedId={prediction.id} compareId={comparePrediction?.id} onSelect={selectPrediction} onCompare={setCompareId} onOpen={() => setDialogOpen(true)} />}
-          {mobileTab === 'insights' && <WorkspaceInspector prediction={prediction} facts={analysisFacts} chains={result.chains} visibleChains={visibleChains} onToggleChain={toggleChain} notices={result.notices} focusMode={focusMode} onAction={runEvidenceAction} />}
+          <section id="mobile-panel-structure" role="tabpanel" aria-labelledby="mobile-tab-structure" hidden={mobileTab !== 'structure'}><Inspector summary={prediction.summary} chains={result.chains} visibleChains={visibleChains} onToggleChain={toggleChain} notices={result.notices} /></section>
+          <section id="mobile-panel-pae" role="tabpanel" aria-labelledby="mobile-tab-pae" hidden={mobileTab !== 'pae'}><PaeHeatmap pae={prediction.confidence?.pae} chainIds={prediction.confidence?.tokenChainIds} tokenResidues={prediction.confidence?.tokenResidues} selection={selection} selectionStats={analysisFacts.selection} onSelection={setSelection} selectionLabel={selectionLabel} primaryLabel={prediction.label} comparison={comparePrediction ? { label: comparePrediction.label, pae: comparePrediction.confidence?.pae, chainIds: comparePrediction.confidence?.tokenChainIds, tokenResidues: comparePrediction.confidence?.tokenResidues, selectionStats: comparisonFacts?.selection } : undefined} compact /></section>
+          <section id="mobile-panel-models" role="tabpanel" aria-labelledby="mobile-tab-models" hidden={mobileTab !== 'models'}><PredictionRail predictions={result.predictions} selectedId={prediction.id} compareId={comparePrediction?.id} onSelect={selectPrediction} onCompare={setCompareId} onOpen={showOpenDialog} /></section>
+          <section id="mobile-panel-insights" role="tabpanel" aria-labelledby="mobile-tab-insights" hidden={mobileTab !== 'insights'}><WorkspaceInspector prediction={prediction} chains={result.chains} visibleChains={visibleChains} onToggleChain={toggleChain} notices={result.notices} onAction={runEvidenceAction} /></section>
         </div>
-        <button className="mobile-open" type="button" onClick={() => setDialogOpen(true)}><Icon name="file" />Open another result</button>
+        <button className="mobile-open" type="button" onClick={showOpenDialog}><Icon name="file" />Open another result</button>
       </main>
       </>}
 
       {dragging && <div className="drop-overlay"><Icon name="folder" size={42} /><strong>Drop AlphaFold 3 output</strong><span>ZIP, folder contents, CIF, or confidence JSON</span></div>}
       {toast && <div className="toast" role="status" aria-live="polite"><Icon name="check" />{toast}</div>}
-      <OpenResultDialog open={dialogOpen} busy={busy} error={error} preview={pendingResult} onClose={() => { setDialogOpen(false); setPendingResult(undefined); setPendingView(undefined); }} onFiles={(files) => void openFiles(files)} onConfirm={confirmImport} onBack={() => { setPendingResult(undefined); setPendingView(undefined); setError(undefined); }} />
+      <OpenResultDialog open={dialogOpen} busy={busy} error={error} preview={pendingResult} onClose={() => { setDialogOpen(false); setPendingResult(undefined); setPendingView(undefined); setError(undefined); }} onFiles={(files) => void openFiles(files)} onConfirm={confirmImport} onBack={() => { setPendingResult(undefined); setPendingView(undefined); setError(undefined); }} />
     </div>
+    </AssistantSessionProvider>
   );
 }

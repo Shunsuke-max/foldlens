@@ -28,15 +28,118 @@ export function downloadSession(session: FoldLensSession) {
   downloadText(`${safeName(session.result.jobName)}.foldlens.json`, JSON.stringify(session, null, 2), 'application/json');
 }
 
-function isSession(value: unknown): value is FoldLensSession {
+export function createPaeSnapshot(pae?: number[][]) {
+  if (!pae?.length || typeof document === 'undefined') return undefined;
+  const size = 480;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const context = canvas.getContext('2d');
+  if (!context) return undefined;
+  const image = context.createImageData(size, size);
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      const value = pae[Math.min(pae.length - 1, Math.floor((x / size) * pae.length))]?.[Math.min(pae.length - 1, Math.floor((y / size) * pae.length))];
+      const t = Number.isFinite(value) ? Math.max(0, Math.min(1, value / 32)) : 1;
+      const offset = (y * size + x) * 4;
+      image.data[offset] = Math.round(18 + 237 * t);
+      image.data[offset + 1] = Math.round(42 + 191 * t);
+      image.data[offset + 2] = Math.round(82 - 13 * t);
+      image.data[offset + 3] = 255;
+    }
+  }
+  context.putImageData(image, 0, 0);
+  return canvas.toDataURL('image/png');
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+const finiteOptional = (value: unknown) => value === undefined || typeof value === 'number' && Number.isFinite(value);
+const stringArray = (value: unknown, maximum: number) => Array.isArray(value) && value.length <= maximum && value.every((item) => typeof item === 'string');
+const finiteArray = (value: unknown, maximum: number) => Array.isArray(value) && value.length <= maximum && value.every((item) => typeof item === 'number' && Number.isFinite(item));
+
+function validMatrix(value: unknown, maximumDimension = 4096, square = true) {
+  if (value === undefined) return true;
+  if (!Array.isArray(value) || value.length === 0 || value.length > maximumDimension) return false;
+  const width = Array.isArray(value[0]) ? value[0].length : 0;
+  return width > 0 && width <= maximumDimension && (!square || width === value.length) && value.every((row) => Array.isArray(row) && row.length === width && row.every((cell) => typeof cell === 'number' && Number.isFinite(cell)));
+}
+
+function validPrediction(value: unknown) {
+  if (!isRecord(value) || typeof value.id !== 'string' || typeof value.label !== 'string' || typeof value.path !== 'string' || typeof value.cif !== 'string') return false;
+  if (value.cif.length > 48 * 1024 * 1024 || !isRecord(value.summary)) return false;
+  const summary = value.summary;
+  if (!finiteOptional(summary.ptm) || !finiteOptional(summary.iptm) || !finiteOptional(summary.rankingScore) || !finiteOptional(summary.fractionDisordered)) return false;
+  if (summary.hasClash !== undefined && typeof summary.hasClash !== 'boolean') return false;
+  if (summary.chainIds !== undefined && !stringArray(summary.chainIds, 256)) return false;
+  if (summary.chainPtm !== undefined && !finiteArray(summary.chainPtm, 256)) return false;
+  if (summary.chainIptm !== undefined && !finiteArray(summary.chainIptm, 256)) return false;
+  if (!validMatrix(summary.chainPairIptm, 256) || !validMatrix(summary.chainPairPaeMin, 256)) return false;
+  const chainCount = Array.isArray(summary.chainIds) ? summary.chainIds.length : undefined;
+  if (chainCount !== undefined) {
+    if (Array.isArray(summary.chainPtm) && summary.chainPtm.length !== chainCount) return false;
+    if (Array.isArray(summary.chainIptm) && summary.chainIptm.length !== chainCount) return false;
+    if (Array.isArray(summary.chainPairIptm) && summary.chainPairIptm.length !== chainCount) return false;
+    if (Array.isArray(summary.chainPairPaeMin) && summary.chainPairPaeMin.length !== chainCount) return false;
+  }
+  if (value.confidence === undefined) return true;
+  if (!isRecord(value.confidence)) return false;
+  const confidence = value.confidence;
+  if (!validMatrix(confidence.pae) || !validMatrix(confidence.contactProbs)) return false;
+  if (confidence.tokenChainIds !== undefined && !stringArray(confidence.tokenChainIds, 4096)) return false;
+  if (confidence.tokenPlddts !== undefined && !finiteArray(confidence.tokenPlddts, 4096)) return false;
+  if (confidence.atomPlddts !== undefined && !finiteArray(confidence.atomPlddts, 2_000_000)) return false;
+  if (confidence.atomChainIds !== undefined && !stringArray(confidence.atomChainIds, 2_000_000)) return false;
+  if (confidence.tokenResidues !== undefined && (!Array.isArray(confidence.tokenResidues) || confidence.tokenResidues.length > 4096 || !confidence.tokenResidues.every((item) => isRecord(item)
+    && typeof item.tokenIndex === 'number' && Number.isSafeInteger(item.tokenIndex) && item.tokenIndex >= 0
+    && typeof item.chainId === 'string' && typeof item.residueId === 'string'
+    && (item.residueNumber === undefined || Number.isSafeInteger(item.residueNumber))
+    && (item.residueName === undefined || typeof item.residueName === 'string')
+    && (item.isHetero === undefined || typeof item.isHetero === 'boolean')))) return false;
+  if (Array.isArray(confidence.atomPlddts) && Array.isArray(confidence.atomChainIds) && confidence.atomPlddts.length !== confidence.atomChainIds.length) return false;
+  const paeSize = Array.isArray(confidence.pae) ? confidence.pae.length : undefined;
+  if (paeSize && Array.isArray(confidence.tokenChainIds) && confidence.tokenChainIds.length !== paeSize) return false;
+  if (paeSize && Array.isArray(confidence.tokenResidues) && confidence.tokenResidues.length !== paeSize) return false;
+  if (Array.isArray(confidence.tokenPlddts) && Array.isArray(confidence.tokenResidues) && confidence.tokenPlddts.length !== confidence.tokenResidues.length) return false;
+  return true;
+}
+
+export function isSession(value: unknown): value is FoldLensSession {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const session = value as Partial<FoldLensSession>;
   const result = session.result as Partial<AF3Result> | undefined;
   const view = session.view as Partial<FoldLensViewState> | undefined;
-  return session.format === 'foldlens-session'
+  if (!(session.format === 'foldlens-session'
     && session.version === 1
-    && Boolean(result && typeof result.jobName === 'string' && Array.isArray(result.predictions) && result.predictions.length > 0 && Array.isArray(result.chains))
-    && Boolean(view && typeof view.selectedId === 'string' && Array.isArray(view.visibleChains));
+    && typeof session.savedAt === 'string'
+    && result && typeof result.jobName === 'string' && typeof result.sourceName === 'string'
+    && Array.isArray(result.predictions) && result.predictions.length > 0 && result.predictions.length <= 12 && result.predictions.every(validPrediction)
+    && Array.isArray(result.chains) && result.chains.length > 0 && result.chains.length <= 256
+    && result.chains.every((chain) => isRecord(chain) && typeof chain.id === 'string' && typeof chain.label === 'string' && typeof chain.color === 'string' && ['protein', 'nucleic', 'ligand', 'unknown'].includes(String(chain.kind)))
+    && Array.isArray(result.notices) && result.notices.length <= 32 && result.notices.every((notice) => typeof notice === 'string')
+    && view && typeof view.selectedId === 'string' && Array.isArray(view.visibleChains)
+    && view.visibleChains.every((id) => typeof id === 'string')
+    && (view.colorMode === 'confidence' || view.colorMode === 'chains')
+    && typeof view.surface === 'boolean'
+    && (view.surfaceOnly === undefined || typeof view.surfaceOnly === 'boolean')
+    && (view.focusMode === undefined || ['all', 'interface', 'pocket', 'domains'].includes(view.focusMode))
+    && (view.selectedDomainId === undefined || typeof view.selectedDomainId === 'string'))) return false;
+  if (new Set(result.predictions.map((item) => item.id)).size !== result.predictions.length || new Set(result.chains.map((chain) => chain.id)).size !== result.chains.length) return false;
+  if (result.domainAnnotations !== undefined && (!Array.isArray(result.domainAnnotations) || result.domainAnnotations.length > 256 || !result.domainAnnotations.every((domain) => isRecord(domain) && typeof domain.id === 'string' && typeof domain.label === 'string' && typeof domain.chainId === 'string' && Number.isSafeInteger(domain.start) && Number.isSafeInteger(domain.end) && domain.start <= domain.end && (domain.source === 'interpro' || domain.source === 'provided')))) return false;
+  const prediction = result.predictions.find((item) => item.id === view.selectedId);
+  const knownPredictions = new Set(result.predictions.map((item) => item.id));
+  const knownChains = new Set(result.chains.map((chain) => chain.id));
+  if (!prediction || view.compareId !== undefined && (!knownPredictions.has(view.compareId) || view.compareId === view.selectedId)) return false;
+  if (!view.visibleChains.every((id) => knownChains.has(id))) return false;
+  const domainIds = new Set(result.domainAnnotations?.map((domain) => domain.id) ?? []);
+  if (result.domainAnnotations?.some((domain) => !knownChains.has(domain.chainId)) || view.selectedDomainId !== undefined && !domainIds.has(view.selectedDomainId)) return false;
+  if (!finiteOptional(view.brightness) || view.brightness !== undefined && (view.brightness < 60 || view.brightness > 140)) return false;
+  if (view.selection !== null) {
+    if (!isRecord(view.selection)) return false;
+    const size = prediction.confidence?.pae?.length ?? prediction.confidence?.tokenResidues?.length ?? prediction.confidence?.tokenChainIds?.length ?? 0;
+    const values = [view.selection.xStart, view.selection.xEnd, view.selection.yStart, view.selection.yEnd];
+    if (!size || !values.every((item) => Number.isSafeInteger(item) && item >= 0 && item < size) || view.selection.xStart > view.selection.xEnd || view.selection.yStart > view.selection.yEnd) return false;
+  }
+  return true;
 }
 
 export async function parseSessionFile(files: File[]): Promise<FoldLensSession | null> {

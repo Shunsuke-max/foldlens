@@ -32,3 +32,17 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS “AS IS” 
 The complete dependency license, including incorporated GLmol, Three.js, and jQuery notices, is distributed by the `3dmol` package as `node_modules/3dmol/LICENSE` after installation.
 
 Suggested citation: Rego N, Koes D. 3Dmol.js: molecular visualization with WebGL. *Bioinformatics*. 2015;31(8):1322–1324. https://doi.org/10.1093/bioinformatics/btu829
+
+## Other runtime libraries
+
+The application also uses the following runtime libraries. Their complete license texts are distributed in each installed package:
+
+- React and React DOM — MIT
+- Express — MIT
+- fflate — MIT
+- Zod — MIT
+- tsx — MIT
+- OpenAI JavaScript SDK — Apache-2.0
+- dotenv — BSD-2-Clause
+
+See `package-lock.json` for the exact resolved versions and transitive dependency inventory.

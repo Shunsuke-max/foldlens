@@ -63,9 +63,8 @@ function bestCut(pae: number[][], indices: number[], start: number, end: number)
   return best;
 }
 
-function paeSegments(pae: number[][] | undefined, indices: number[]) {
+function paeSegments(pae: number[][], indices: number[]) {
   if (!indices.length) return [];
-  if (!pae?.length) return [{ start: 0, end: indices.length - 1 }];
   const segments = [{ start: 0, end: indices.length - 1 }];
   while (segments.length < MAX_REGIONS_PER_CHAIN) {
     let candidate: { segmentIndex: number; cut: number; score: number } | null = null;
@@ -100,10 +99,11 @@ export function inferDomains(result: AF3Result, prediction: Prediction): DomainR
   const annotatedChains = new Set(annotations.map((annotation) => annotation.chainId));
   const drafts: RegionDraft[] = annotations.map((annotation, index) => draftFromAnnotation(annotation, tokens, prediction, DOMAIN_COLORS[index % DOMAIN_COLORS.length]));
 
-  result.chains.filter((chain) => chain.kind === 'protein' && !annotatedChains.has(chain.id)).forEach((chain) => {
+  const pae = prediction.confidence?.pae;
+  result.chains.filter((chain) => pae?.length && chain.kind === 'protein' && !annotatedChains.has(chain.id)).forEach((chain) => {
     const chainTokens = tokens.filter((token) => token.chainId === chain.id && token.residueNumber !== undefined);
     const indices = chainTokens.map((token) => token.tokenIndex);
-    paeSegments(prediction.confidence?.pae, indices).forEach((segment, segmentIndex) => {
+    paeSegments(pae!, indices).forEach((segment, segmentIndex) => {
       const segmentTokens = chainTokens.slice(segment.start, segment.end + 1);
       const tokenIndices = segmentTokens.map((token) => token.tokenIndex);
       const start = segmentTokens[0]?.residueNumber;

@@ -1,6 +1,6 @@
 import OpenAI from 'openai';
 import { zodTextFormat } from 'openai/helpers/zod';
-import { AssistantRequestSchema, AssistantResponseSchema } from '../src/lib/analysisSchema';
+import { AssistantRequestSchema, AssistantResponseSchema, isGroundedAssistantResponse } from '../src/lib/analysisSchema';
 import { buildLocalAssistantResponse } from '../src/lib/analysis';
 import type { AssistantEnvelope, AssistantResponse } from '../src/types/analysis';
 
@@ -24,10 +24,12 @@ function systemPrompt() {
   return [
     'You are FoldLens, a careful assistant for interpreting AlphaFold 3 confidence outputs.',
     'Use only the supplied deterministic facts. Do not infer measurements, contacts, mechanisms, or biological truth that are absent.',
+    'When hasPae or hasPlddt is false, do not describe or recommend analysis based on that missing metric.',
     'Treat source=pae domain entries as predicted structural regions, never as named functional domains.',
     'Distinguish prediction confidence from experimental validation. Never make clinical, therapeutic, or efficacy claims.',
     'Lead with the conclusion. Include 1–4 short evidence items copied from the supplied facts and material caveats.',
     'Evidence actions must reference only supplied chain IDs and residue ranges. Use empty arrays and action type none when no grounded action exists.',
+    'For show_selection, copy facts.selection.matrixRange exactly into action.selection. For every other action type, action.selection must be null.',
     'Keep the answer under 60 words and each interpretation under 18 words. Every schema field is required.',
   ].join('\n');
 }
@@ -53,7 +55,9 @@ export async function analyzePrediction(rawRequest: unknown): Promise<AssistantE
       max_output_tokens: 1200,
     });
     const parsed = AssistantResponseSchema.safeParse(response.output_parsed as AssistantResponse | null);
-    if (!parsed.success) return { data: local, source: 'local', model: model(), fallbackReason: 'Invalid structured output' };
+    if (!parsed.success || !isGroundedAssistantResponse(parsed.data, request.facts)) {
+      return { data: local, source: 'local', model: model(), fallbackReason: 'Ungrounded structured output' };
+    }
     return { data: parsed.data, source: 'live', model: model(), fallbackReason: null };
   } catch (error) {
     return {

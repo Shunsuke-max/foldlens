@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ViewerToolbar } from './ViewerToolbar';
 
@@ -11,8 +11,10 @@ describe('ViewerToolbar', () => {
       colorMode: 'chains' as const,
       surface: true,
       surfaceOnly: true,
+      brightness: 100,
       onColorMode: vi.fn(),
       onSurface: vi.fn(),
+      onBrightness: vi.fn(),
       onReset: vi.fn(),
       onExpand: vi.fn(),
     };
@@ -28,9 +30,20 @@ describe('ViewerToolbar', () => {
   });
 
   it('shows categorical domain coloring as separate from chain and confidence colors', () => {
-    render(<ViewerToolbar colorMode="chains" surface={false} colorModeSuppressed onColorMode={vi.fn()} onSurface={vi.fn()} onReset={vi.fn()} onExpand={vi.fn()} />);
+    render(<ViewerToolbar colorMode="chains" surface={false} colorModeSuppressed brightness={100} onColorMode={vi.fn()} onSurface={vi.fn()} onBrightness={vi.fn()} onReset={vi.fn()} onExpand={vi.fn()} />);
 
     expect(screen.getByRole('button', { name: 'Chains' }).getAttribute('aria-pressed')).toBe('false');
     expect(screen.getByRole('button', { name: 'Confidence' }).getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('lets the user adjust and reset structure brightness', () => {
+    const onBrightness = vi.fn();
+    render(<ViewerToolbar colorMode="chains" surface={false} brightness={115} onColorMode={vi.fn()} onSurface={vi.fn()} onBrightness={onBrightness} onReset={vi.fn()} onExpand={vi.fn()} />);
+
+    fireEvent.change(screen.getByRole('slider', { name: 'Structure brightness' }), { target: { value: '130' } });
+    expect(onBrightness).toHaveBeenCalledWith(130);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reset brightness' }));
+    expect(onBrightness).toHaveBeenCalledWith(100);
   });
 });
