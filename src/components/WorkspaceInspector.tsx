@@ -36,8 +36,8 @@ export function WorkspaceInspector({ tab: controlledTab, onTabChange, prediction
         event.preventDefault();
         selectTab(event.key === 'ArrowLeft' || event.key === 'Home' ? 'analysis' : 'ask');
       }}>
-        <button id={analysisTabId} type="button" role="tab" aria-selected={tab === 'analysis'} aria-controls={analysisPanelId} tabIndex={tab === 'analysis' ? 0 : -1} onClick={() => selectTab('analysis')}>Analysis</button>
-        <button id={askTabId} type="button" role="tab" aria-selected={tab === 'ask'} aria-controls={askPanelId} tabIndex={tab === 'ask' ? 0 : -1} onClick={() => selectTab('ask')}>Ask FoldLens</button>
+        <button id={analysisTabId} type="button" role="tab" aria-selected={tab === 'analysis'} aria-controls={analysisPanelId} tabIndex={tab === 'analysis' ? 0 : -1} onClick={() => selectTab('analysis')}>Measured facts</button>
+        <button id={askTabId} type="button" role="tab" aria-selected={tab === 'ask'} aria-controls={askPanelId} tabIndex={tab === 'ask' ? 0 : -1} onClick={() => selectTab('ask')}>Scientific discussion</button>
       </div>
       <div id={analysisPanelId} role="tabpanel" aria-labelledby={analysisTabId} hidden={tab !== 'analysis'}>
         <Inspector summary={prediction.summary} chains={chains} visibleChains={visibleChains} onSetChainVisibility={onSetChainVisibility} notices={notices} embedded />

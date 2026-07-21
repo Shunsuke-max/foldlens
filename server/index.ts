@@ -40,7 +40,11 @@ if (isProduction) {
   app.get('/{*splat}', (_request, response) => response.sendFile(path.join(distDir, 'index.html')));
 } else {
   const { createServer } = await import('vite');
-  const vite = await createServer({ root: rootDir, server: { middlewareMode: true }, appType: 'spa' });
+  const vite = await createServer({
+    root: rootDir,
+    server: { middlewareMode: true, hmr: { host: '127.0.0.1', port: port + 1 } },
+    appType: 'spa',
+  });
   app.use(vite.middlewares);
 }
 

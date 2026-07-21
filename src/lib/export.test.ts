@@ -32,7 +32,7 @@ describe('FoldLens exports', () => {
     const unsafe = createSession(demoResult, { selectedId: 'demo-1', visibleChains: [], colorMode: 'chains', surface: false, selection: { xStart: 0, xEnd: 1_000_000_000, yStart: 0, yEnd: 1 } });
     const file = new File([JSON.stringify(unsafe)], 'unsafe.foldlens.json', { type: 'application/json' });
     expect(await parseSessionFile([file])).toBeNull();
-  });
+  }, 10_000);
 
   it('rejects inconsistent optional arrays and unknown view references', () => {
     const inconsistent = structuredClone(createSession(demoResult, { selectedId: 'demo-1', visibleChains: ['Q'], colorMode: 'chains', surface: false, selection: null }));

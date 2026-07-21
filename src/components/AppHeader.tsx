@@ -4,12 +4,13 @@ import { BrandMark, Icon } from './Icon';
 type Props = {
   jobName: string;
   isDemo?: boolean;
+  onHome: () => void;
   onOpen: () => void;
   onExportReport: () => void;
   onSaveSession: () => void;
 };
 
-export function AppHeader({ jobName, isDemo, onOpen, onExportReport, onSaveSession }: Props) {
+export function AppHeader({ jobName, isDemo, onHome, onOpen, onExportReport, onSaveSession }: Props) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
@@ -29,7 +30,12 @@ export function AppHeader({ jobName, isDemo, onOpen, onExportReport, onSaveSessi
   const run = (action: () => void) => { menuButtonRef.current?.focus(); setMenuOpen(false); action(); };
   return (
     <header className="app-header">
-      <div className="brand"><BrandMark /><strong>FoldLens</strong></div>
+      <div className="brand">
+        <button className="home-button" type="button" onClick={onHome} aria-label="Back to FoldLens home">
+          <Icon name="arrowLeft" /><span>Home</span>
+        </button>
+        <div className="brand-lockup"><BrandMark /><strong>FoldLens</strong></div>
+      </div>
       <div className="job-heading">
         <strong>{jobName}</strong>
         <span className={isDemo ? 'demo-status' : ''}><i />{isDemo ? 'Sample · one structure with illustrative confidence variants' : 'Local-first · source files stay on this device'}</span>
@@ -39,6 +45,7 @@ export function AppHeader({ jobName, isDemo, onOpen, onExportReport, onSaveSessi
         <button className="button secondary export-button" type="button" onClick={onExportReport}><Icon name="upload" />Export report</button>
         <button ref={menuButtonRef} className="icon-button more-button" aria-label="More options" aria-expanded={menuOpen} aria-haspopup="menu" type="button" onClick={() => setMenuOpen((value) => !value)}><Icon name="more" /></button>
         {menuOpen && <div className="header-menu" role="menu">
+          <button role="menuitem" type="button" onClick={() => run(onHome)}><Icon name="arrowLeft" />Back to home</button>
           <button role="menuitem" type="button" onClick={() => run(onOpen)}><Icon name="folder" />Open result</button>
           <button role="menuitem" type="button" onClick={() => run(onExportReport)}><Icon name="upload" />Export HTML report</button>
           <button role="menuitem" type="button" onClick={() => run(onSaveSession)}><Icon name="file" />Save resumable session</button>

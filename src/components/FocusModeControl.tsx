@@ -33,7 +33,7 @@ export function FocusModeControl({ mode, interfaceLabel, interfaceScore, pocketL
     },
     {
       id: 'pocket',
-      label: 'Ligand pocket',
+      label: 'Pocket',
       detail: pocketLabel ? `${pocketLabel} · within 5 Å` : 'No ligand found',
       icon: 'molecule',
       disabled: !pocketLabel,
@@ -58,6 +58,7 @@ export function FocusModeControl({ mode, interfaceLabel, interfaceScore, pocketL
           type="button"
           className={mode === option.id ? 'active' : ''}
           aria-pressed={mode === option.id}
+          aria-label={option.id === 'pocket' ? `Ligand pocket · ${option.detail}` : undefined}
           disabled={option.disabled}
           title={option.title}
           onClick={() => onChange(option.id)}

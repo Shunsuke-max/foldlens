@@ -36,6 +36,22 @@ describe('PaeHeatmap', () => {
     expect(onSelection).toHaveBeenLastCalledWith({ xStart: 6, xEnd: 7, yStart: 8, yEnd: 9 });
   });
 
+  it('keeps a custom evidence-linked range visible in the pair picker', () => {
+    render(<PaeHeatmap
+      pae={pae}
+      chainIds={chainIds}
+      selection={{ xStart: 1, xEnd: 2, yStart: 4, yEnd: 6 }}
+      selectionLabel="A 2–B 1 scored on C 1–D 1"
+      onSelection={() => undefined}
+      primaryLabel="Model 1"
+    />);
+
+    const picker = screen.getByLabelText('Chain pair') as HTMLSelectElement;
+    expect(picker.value).toBe('custom');
+    expect(screen.getByText('Linked range')).toBeTruthy();
+    expect(screen.getByRole('option', { name: /Custom · A 2–B 1/ })).toBeTruthy();
+  });
+
   it('supports current, comparison, and absolute-difference PAE views', () => {
     const comparison = pae.map((row) => row.map((value) => value + 1));
     render(<PaeHeatmap pae={pae} chainIds={chainIds} selection={null} onSelection={() => undefined} primaryLabel="Model 1" comparison={{ label: 'Model 2', pae: comparison }} />);

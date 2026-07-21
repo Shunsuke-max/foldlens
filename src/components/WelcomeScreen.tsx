@@ -4,10 +4,16 @@ import type { RecentSessionSummary } from '../lib/sessionStore';
 
 type Props = {
   demoBusy: boolean;
+  currentAnalysis?: {
+    jobName: string;
+    predictionCount: number;
+    isDemo?: boolean;
+  };
   recentSession: RecentSessionSummary | null;
   resumeBusy: boolean;
   onFiles: (files: File[]) => void;
   onDemo: () => void;
+  onContinueCurrent: () => void;
   onResume: () => void;
   onForgetRecent: () => void;
 };
@@ -18,7 +24,7 @@ function savedLabel(savedAt: string) {
   return `Saved ${new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date)}`;
 }
 
-export function WelcomeScreen({ demoBusy, recentSession, resumeBusy, onFiles, onDemo, onResume, onForgetRecent }: Props) {
+export function WelcomeScreen({ demoBusy, currentAnalysis, recentSession, resumeBusy, onFiles, onDemo, onContinueCurrent, onResume, onForgetRecent }: Props) {
   const fileInput = useRef<HTMLInputElement>(null);
   const folderInput = useRef<HTMLInputElement>(null);
 
@@ -48,7 +54,18 @@ export function WelcomeScreen({ demoBusy, recentSession, resumeBusy, onFiles, on
         </section>
 
         <section className="welcome-open-card" aria-labelledby="welcome-open-title">
-          {recentSession && <div className="welcome-resume" aria-labelledby="welcome-resume-title">
+          {currentAnalysis && <div className="welcome-resume welcome-current" aria-labelledby="welcome-current-title">
+            <div className="welcome-resume-icon"><Icon name="history" size={22} /></div>
+            <span className="welcome-resume-eyebrow">CONTINUE CURRENT ANALYSIS</span>
+            <h2 id="welcome-current-title">{currentAnalysis.jobName}</h2>
+            <p><strong>{currentAnalysis.predictionCount}</strong> prediction{currentAnalysis.predictionCount === 1 ? '' : 's'} · {currentAnalysis.isDemo ? 'Sample workspace' : 'Current local workspace'}</p>
+            <div className="welcome-resume-actions single-action">
+              <button className="button primary" type="button" onClick={onContinueCurrent}>
+                <Icon name="history" />Continue current analysis
+              </button>
+            </div>
+          </div>}
+          {!currentAnalysis && recentSession && <div className="welcome-resume" aria-labelledby="welcome-resume-title">
             <div className="welcome-resume-icon"><Icon name="history" size={22} /></div>
             <span className="welcome-resume-eyebrow">CONTINUE PREVIOUS ANALYSIS</span>
             <h2 id="welcome-resume-title">{recentSession.jobName}</h2>
@@ -60,9 +77,8 @@ export function WelcomeScreen({ demoBusy, recentSession, resumeBusy, onFiles, on
               <button className="button ghost" type="button" onClick={onForgetRecent} disabled={resumeBusy}>Forget</button>
             </div>
           </div>}
-          {recentSession && <div className="welcome-divider welcome-resume-divider"><span>or open another result</span></div>}
+          {(currentAnalysis || recentSession) && <div className="welcome-divider welcome-resume-divider"><span>or open another result</span></div>}
           <div className="welcome-open-icon"><Icon name="folder" size={28} /></div>
-          <span className="welcome-step">STEP 1</span>
           <h2 id="welcome-open-title">Open an AlphaFold 3 result</h2>
           <p>Select the downloaded output directory, or open its ZIP and result files.</p>
           <div className="welcome-open-actions">
@@ -76,7 +92,11 @@ export function WelcomeScreen({ demoBusy, recentSession, resumeBusy, onFiles, on
           <div className="welcome-drop-note"><Icon name="upload" size={17} />You can also drop files anywhere on this screen.</div>
           <div className="welcome-divider"><span>or</span></div>
           <button className="welcome-demo" type="button" onClick={onDemo} disabled={demoBusy}>
-            <Icon name="molecule" size={18} />{demoBusy ? 'Loading sample…' : 'Explore sample result'}
+            <Icon name="molecule" size={20} />
+            <span>
+              <strong>{demoBusy ? 'Loading sample…' : 'Start 90-second sample'}</strong>
+              {!demoBusy && <small>No files needed · see evidence-linked analysis</small>}
+            </span>
           </button>
           <p className="welcome-privacy"><Icon name="lock" size={13} />Structure files are parsed locally in your browser.</p>
           <input ref={fileInput} hidden type="file" multiple accept=".zip,.cif,.mmcif,.json,.csv,.zst" aria-label="Select AlphaFold 3 ZIP or files" onChange={pick} />

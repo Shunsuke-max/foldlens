@@ -1,5 +1,5 @@
 import type { AF3Result, DomainRegion, Prediction, ResidueRange, Selection, TokenResidue } from '../types/af3';
-import type { AnalysisFacts, AssistantResponse, InterfaceFact, LowConfidenceRegion } from '../types/analysis';
+import type { AnalysisFacts, AssistantEvidence, AssistantIntent, AssistantPlan, AssistantResponse, EvidenceRef, InterfaceFact, LowConfidenceRegion } from '../types/analysis';
 import { inferDomains } from './domains';
 import { chainPairPaeSummary, robustPairSelection, selectionPaeSummary } from './pae';
 
@@ -164,6 +164,10 @@ function rangesForInterface(prediction: Prediction, chainIds: string[]) {
   return mergeRanges(tokens.flatMap((token) => token.residueNumber === undefined ? [] : [{ chainId: token.chainId, start: token.residueNumber, end: token.residueNumber }]));
 }
 
+function factRangesForChains(facts: AnalysisFacts, chainIds: string[]) {
+  return facts.chainRanges.filter((range) => chainIds.includes(range.chainId));
+}
+
 export function interfaceSelection(prediction: Prediction, chainA: string, chainB: string): Selection {
   const chainIds = prediction.confidence?.tokenChainIds ?? normalizedTokens(prediction).map((token) => token.chainId);
   return robustPairSelection(prediction.confidence?.pae, chainIds, chainA, chainB);
@@ -176,7 +180,7 @@ export function rangesSelection(prediction: Prediction, ranges: ResidueRange[]):
   return { xStart: Math.min(...indices), xEnd: Math.max(...indices), yStart: Math.min(...indices), yEnd: Math.max(...indices) };
 }
 
-export function buildLocalAssistantResponse(facts: AnalysisFacts, prediction?: Prediction, question = ''): AssistantResponse {
+function legacyBuildLocalAssistantResponse(facts: AnalysisFacts, prediction?: Prediction, question = ''): AssistantResponse {
   const evidence: AssistantResponse['evidence'] = [];
   const primary = facts.primaryInterface;
   const normalizedQuestion = question.toLowerCase();
@@ -200,7 +204,9 @@ export function buildLocalAssistantResponse(facts: AnalysisFacts, prediction?: P
       action: { type: 'show_residues', chainIds: [domainToInspect.chainId], residueRanges: [range], selection: null },
     });
   }
-  const interfaceRanges = prediction && primary ? rangesForInterface(prediction, [primary.chainA, primary.chainB]) : [];
+  const interfaceRanges = primary
+    ? prediction ? rangesForInterface(prediction, [primary.chainA, primary.chainB]) : factRangesForChains(facts, [primary.chainA, primary.chainB])
+    : [];
   if (primary?.iptm !== null && primary?.iptm !== undefined) evidence.push({
     id: 'interface-iptm', label: `${primary.chainA}–${primary.chainB} ipTM`, value: primary.iptm.toFixed(2),
     interpretation: primary.iptm >= 0.8 ? 'Strong interface-level confidence' : primary.iptm >= 0.6 ? 'Moderate interface-level confidence' : 'Weak interface-level confidence',
@@ -227,12 +233,28 @@ export function buildLocalAssistantResponse(facts: AnalysisFacts, prediction?: P
   const asksForUncertainty = /(uncertain|avoid|caution|least confident|low confidence|weak|unreliable|inspect first)/.test(normalizedQuestion);
   const asksForClash = /(clash|overlap|steric)/.test(normalizedQuestion);
   const asksForSelection = /(selected|selection|this region)/.test(normalizedQuestion) && Boolean(facts.selection);
+  const asksForAlternative = /(challenge|alternative|another interpretation|competing explanation|反証|別の解釈)/.test(normalizedQuestion);
+  const asksForFalsification = /(falsif|change this conclusion|change the conclusion|weaken this conclusion|結論を変|覆す)/.test(normalizedQuestion);
   const interfaceIptm = primary?.iptm ?? 0;
   const interfacePae = primary?.paeMedian;
   const strong = interfaceIptm >= 0.8 && interfacePae !== null && interfacePae !== undefined && interfacePae <= 5;
   const mixedStrong = interfaceIptm >= 0.8 && interfacePae !== null && interfacePae !== undefined && interfacePae <= 10;
   const highIptm = interfaceIptm >= 0.8;
   const moderate = (primary?.iptm ?? 0) >= 0.6;
+  const alternative = asksForBiology
+    ? 'A biological explanation may be plausible, but the loaded confidence outputs cannot distinguish it from other functional interpretations.'
+    : facts.selection
+      ? 'The selected PAE may reflect uncertain relative placement rather than poor local folding; inspect local pLDDT separately.'
+      : highIptm
+        ? 'A high interface score can coexist with uncertain relative placement, so the interface may be plausible without being geometrically precise.'
+        : moderate
+          ? 'The model may capture a real interaction mode, but the current confidence evidence also permits an unstable or incorrectly oriented interface.'
+          : 'A weak interface-level result does not prove that no interaction exists; it only means this prediction does not support one confidently.';
+  const falsification = facts.selection
+    ? 'A materially different PAE pattern for the same residues in another prediction would change this interpretation.'
+    : primary
+      ? 'A different prediction with a conflicting ipTM, reciprocal PAE pattern, or clash status would change this interface-level conclusion.'
+      : 'Additional pLDDT or PAE evidence tied to a specific region would be needed to replace this limited conclusion.';
   let answer: string;
   if (asksForBiology) {
     answer = 'The loaded confidence metrics cannot establish biological function, efficacy, or clinical relevance. They only describe confidence in this prediction.';
@@ -248,6 +270,10 @@ export function buildLocalAssistantResponse(facts: AnalysisFacts, prediction?: P
     answer = facts.hasClash === null ? 'No clash flag was present in the loaded summary.'
       : facts.hasClash ? 'The AF3 summary flags a clash, so inspect the model before interpreting local geometry.'
         : 'The AF3 summary does not flag a clash; this is not a guarantee of physically valid geometry.';
+  } else if (asksForAlternative) {
+    answer = alternative;
+  } else if (asksForFalsification) {
+    answer = falsification;
   } else if (asksForUncertainty) {
     answer = low
       ? `Treat ${low.chainId} ${low.start}–${low.end} most cautiously; its mean pLDDT is ${Math.round(low.meanPlddt)}.`
@@ -269,11 +295,272 @@ export function buildLocalAssistantResponse(facts: AnalysisFacts, prediction?: P
   return {
     answer,
     evidence: evidence.slice(0, 4),
+    alternative,
+    falsification,
+    nextQuestions: facts.selection
+      ? ['What is the strongest evidence for this selection?', 'Challenge this interpretation.', 'What would change this conclusion?']
+      : primary
+        ? [`Which part of the ${primary.chainA}–${primary.chainB} interface is least certain?`, 'Challenge this interface conclusion.', 'What would change this conclusion?']
+        : ['What should I inspect first?', 'Which region is least certain?', 'What would change this conclusion?'],
     caveats: [
       'Confidence is not experimental validation.',
       ...(primary?.paeMin !== null && primary?.paeMin !== undefined ? ['Minimum PAE is the best local cell; representative interpretation uses reciprocal median PAE.'] : []),
       ...(facts.domains.some((domain) => domain.source === 'pae') ? ['PAE-derived regions are structural segments, not functional domain annotations.'] : []),
       ...facts.notices,
     ].slice(0, 3),
+  };
+}
+
+function topStructuralRegion(facts: AnalysisFacts) {
+  return [...facts.domains]
+    .filter((domain) => domain.meanPlddt !== null || domain.meanInternalPae !== null)
+    .sort((a, b) => {
+      const confidenceRisk = (a.meanPlddt ?? 100) - (b.meanPlddt ?? 100);
+      return confidenceRisk !== 0 ? confidenceRisk : (b.meanInternalPae ?? 0) - (a.meanInternalPae ?? 0);
+    })[0];
+}
+
+function loadedDomainRange(facts: AnalysisFacts, chainId: string, start: number, end: number): ResidueRange | null {
+  const overlaps = facts.chainRanges
+    .filter((range) => range.chainId === chainId && range.end >= start && range.start <= end)
+    .map((range) => ({ chainId, start: Math.max(start, range.start), end: Math.min(end, range.end) }))
+    .sort((a, b) => (b.end - b.start) - (a.end - a.start));
+  return overlaps[0] ?? null;
+}
+
+export function buildEvidenceCatalog(facts: AnalysisFacts): Map<string, AssistantEvidence> {
+  const catalog = new Map<string, AssistantEvidence>();
+  const add = (ref: EvidenceRef, evidence: Omit<AssistantEvidence, 'id'>) => catalog.set(ref, { id: ref, ...evidence });
+  const noAction = { type: 'none' as const, chainIds: [], residueRanges: [], selection: null };
+  const primary = facts.primaryInterface;
+  const interfaceRanges = primary
+    ? facts.chainRanges.filter((range) => range.chainId === primary.chainA || range.chainId === primary.chainB)
+    : [];
+
+  if (primary?.iptm !== null && primary?.iptm !== undefined && interfaceRanges.length) add('primary_interface_iptm', {
+    label: `${primary.chainA}–${primary.chainB} ipTM`,
+    value: primary.iptm.toFixed(2),
+    interpretation: primary.iptm >= 0.8 ? 'Strong interface-level confidence' : primary.iptm >= 0.6 ? 'Moderate interface-level confidence' : 'Weak interface-level confidence',
+    action: { type: 'show_interface', chainIds: [primary.chainA, primary.chainB], residueRanges: interfaceRanges, selection: null },
+  });
+  if (primary?.paeMedian !== null && primary?.paeMedian !== undefined && interfaceRanges.length) add('primary_interface_pae', {
+    label: `${primary.chainA}–${primary.chainB} reciprocal median PAE`,
+    value: `${primary.paeMedian.toFixed(1)} Å`,
+    interpretation: `${primary.chainB} scored on ${primary.chainA}: ${primary.paeForwardMean?.toFixed(1) ?? '—'} Å · reverse ${primary.paeReverseMean?.toFixed(1) ?? '—'} Å · ${Math.round((primary.lowPaeFraction ?? 0) * 100)}% ≤5 Å`,
+    action: { type: 'show_interface', chainIds: [primary.chainA, primary.chainB], residueRanges: interfaceRanges, selection: null },
+  });
+
+  const low = facts.lowConfidenceRegions[0];
+  if (low) add('lowest_confidence_region', {
+    label: 'Local pLDDT',
+    value: `${low.chainId} ${low.start}–${low.end} · ${Math.round(low.meanPlddt)}`,
+    interpretation: 'Inspect this flexible or weakly resolved region',
+    action: { type: 'show_residues', chainIds: [low.chainId], residueRanges: [{ chainId: low.chainId, start: low.start, end: low.end }], selection: null },
+  });
+
+  if (facts.selection?.medianPae !== null && facts.selection?.medianPae !== undefined) add('active_selection_pae', {
+    label: 'Selected reciprocal median PAE',
+    value: `${facts.selection.medianPae.toFixed(1)} Å`,
+    interpretation: `${facts.selection.scoredLabel} on ${facts.selection.alignedLabel}: ${facts.selection.forwardMeanPae?.toFixed(1) ?? '—'} Å · reverse ${facts.selection.reverseMeanPae?.toFixed(1) ?? '—'} Å`,
+    action: {
+      type: 'show_selection',
+      chainIds: [...new Set(facts.selection.residueRanges.map((range) => range.chainId))],
+      residueRanges: facts.selection.residueRanges,
+      selection: facts.selection.matrixRange,
+    },
+  });
+
+  const domain = topStructuralRegion(facts);
+  if (domain) {
+    const loadedRange = loadedDomainRange(facts, domain.chainId, domain.start, domain.end);
+    const residueRanges = loadedRange ? [loadedRange] : [];
+    if (domain.meanPlddt !== null && loadedRange) add('top_structural_region_plddt', {
+      label: domain.label,
+      value: `${loadedRange.chainId} ${loadedRange.start}–${loadedRange.end} · ${Math.round(domain.meanPlddt)}`,
+      interpretation: domain.meanPlddt >= 90 ? 'Very high local confidence' : domain.meanPlddt >= 70 ? 'Confident local structure' : 'Inspect local geometry cautiously',
+      action: { type: 'show_residues', chainIds: [domain.chainId], residueRanges, selection: null },
+    });
+    if (domain.closestDomainPae !== null && domain.closestDomainLabel && loadedRange) add('top_structural_region_pae', {
+      label: 'Nearest region placement',
+      value: `${domain.closestDomainPae.toFixed(1)} Å`,
+      interpretation: `Relative to ${domain.closestDomainLabel}`,
+      action: { type: 'show_residues', chainIds: [domain.chainId], residueRanges, selection: null },
+    });
+  }
+
+  if (facts.rankingScore !== null) add('ranking_score', {
+    label: 'Ranking score', value: facts.rankingScore.toFixed(3), interpretation: 'Ranks this prediction within the loaded job', action: noAction,
+  });
+  if (facts.ptm !== null) add('overall_ptm', {
+    label: 'pTM', value: facts.ptm.toFixed(2), interpretation: 'Global fold-level confidence', action: noAction,
+  });
+  if (facts.iptm !== null) add('overall_iptm', {
+    label: 'Overall ipTM', value: facts.iptm.toFixed(2), interpretation: 'Overall interface confidence across the prediction', action: noAction,
+  });
+  if (facts.hasClash !== null) add('clash_status', {
+    label: 'Clash flag',
+    value: facts.hasClash ? 'Flagged' : 'Not flagged',
+    interpretation: facts.hasClash ? 'Inspect local geometry before interpretation' : 'No summary-level clash was reported',
+    action: noAction,
+  });
+  return catalog;
+}
+
+function detectLanguage(question: string): 'en' | 'ja' {
+  return /[\u3040-\u30ff\u3400-\u9fff]/.test(question) ? 'ja' : 'en';
+}
+
+function inferIntent(question: string, facts: AnalysisFacts): AssistantIntent {
+  const normalized = question.toLowerCase();
+  if (!normalized.trim() && facts.selection) return 'selection_support';
+  if (/(drug|clinical|disease|treat|efficacy|mechanism|function|binds? in vivo|biologically correct|薬|臨床|疾患|治療|有効|効能|機序|機能|生物学)/.test(normalized)) return 'scope_boundary';
+  if (/(compare|comparison|versus|difference|比較|違い|差分)/.test(normalized)) return 'comparison';
+  if (/(domain|structural region|ドメイン|構造領域)/.test(normalized)) return 'structural_region_priority';
+  if (/(selected|selection|this region|選択|この領域)/.test(normalized) && facts.selection) return 'selection_support';
+  if (/(clash|overlap|steric|衝突|重なり)/.test(normalized)) return 'clash_review';
+  if (/(challenge|alternative|another interpretation|competing explanation|別の解釈|対立仮説)/.test(normalized)) return 'alternative_interpretation';
+  if (/(falsif|change this conclusion|change the conclusion|weaken this conclusion|反証|結論を変|覆す)/.test(normalized)) return 'falsification';
+  if (/(uncertain|avoid|caution|least confident|low confidence|weak|unreliable|inspect first|不確実|避け|注意|信頼できない|信頼性が低|最初に確認)/.test(normalized)) return 'regional_uncertainty';
+  if (/(interface|interaction|界面|相互作用)/.test(normalized)) return 'interface_reliability';
+  return 'overall_assessment';
+}
+
+function questionForIntent(intent: AssistantIntent) {
+  const questions: Record<AssistantIntent, string> = {
+    overall_assessment: 'Summarize the prediction confidence.',
+    interface_reliability: 'Is the interface reliable?',
+    selection_support: 'What does the selected region support?',
+    regional_uncertainty: 'Which region should I inspect first?',
+    structural_region_priority: 'Which structural region should I inspect first?',
+    clash_review: 'Does this model have a clash?',
+    scope_boundary: 'Will this work clinically?',
+    alternative_interpretation: 'Challenge this interpretation.',
+    falsification: 'What would change this conclusion?',
+    comparison: 'Compare these predictions.',
+  };
+  return questions[intent];
+}
+
+function defaultEvidenceRefs(intent: AssistantIntent): EvidenceRef[] {
+  if (intent === 'selection_support') return ['active_selection_pae', 'lowest_confidence_region', 'primary_interface_pae'];
+  if (intent === 'structural_region_priority') return ['top_structural_region_plddt', 'top_structural_region_pae', 'lowest_confidence_region'];
+  if (intent === 'regional_uncertainty') return ['lowest_confidence_region', 'primary_interface_pae', 'primary_interface_iptm'];
+  if (intent === 'clash_review') return ['clash_status', 'primary_interface_pae'];
+  return ['primary_interface_iptm', 'primary_interface_pae', 'lowest_confidence_region'];
+}
+
+function followUpQuestion(intent: AssistantIntent, facts: AnalysisFacts, language: 'en' | 'ja') {
+  const pair = facts.primaryInterface ? `${facts.primaryInterface.chainA}–${facts.primaryInterface.chainB}` : 'primary';
+  const english: Record<AssistantIntent, string> = {
+    overall_assessment: 'What is the strongest evidence for this conclusion?',
+    interface_reliability: `Which part of the ${pair} interface is least certain?`,
+    selection_support: 'What is the strongest evidence for this selection?',
+    regional_uncertainty: 'Which region should I inspect first?',
+    structural_region_priority: 'Which structural region should I inspect first?',
+    clash_review: 'Does the summary report a clash?',
+    scope_boundary: 'What can these confidence metrics support?',
+    alternative_interpretation: 'Challenge this interpretation.',
+    falsification: 'What would change this conclusion?',
+    comparison: 'What evidence is available for the active prediction?',
+  };
+  const japanese: Record<AssistantIntent, string> = {
+    overall_assessment: 'この結論を支える最も強い根拠は何ですか？',
+    interface_reliability: `${pair}界面で最も不確実な部分はどこですか？`,
+    selection_support: '選択領域を支える最も強い根拠は何ですか？',
+    regional_uncertainty: '最初に確認すべき領域はどこですか？',
+    structural_region_priority: '最初に確認すべき構造領域はどこですか？',
+    clash_review: 'サマリーに衝突フラグはありますか？',
+    scope_boundary: 'この信頼度指標から何が言えますか？',
+    alternative_interpretation: 'この解釈に対する別の説明はありますか？',
+    falsification: '何があればこの結論は変わりますか？',
+    comparison: '現在の予測で利用できる根拠は何ですか？',
+  };
+  return (language === 'ja' ? japanese : english)[intent];
+}
+
+function japaneseResponse(base: AssistantResponse, intent: AssistantIntent, facts: AnalysisFacts): AssistantResponse {
+  const primary = facts.primaryInterface;
+  const low = facts.lowConfidenceRegions[0];
+  const domain = topStructuralRegion(facts);
+  const domainRange = domain ? loadedDomainRange(facts, domain.chainId, domain.start, domain.end) : null;
+  const interfacePae = primary?.paeMedian;
+  const highIptm = (primary?.iptm ?? 0) >= 0.8;
+  const moderate = (primary?.iptm ?? 0) >= 0.6;
+  const strong = highIptm && interfacePae !== null && interfacePae !== undefined && interfacePae <= 5;
+  const mixed = highIptm && interfacePae !== null && interfacePae !== undefined && interfacePae <= 10;
+  const alternative = intent === 'scope_boundary'
+    ? '生物学的な説明は仮説として考えられますが、読み込んだ信頼度出力だけでは他の機能解釈と区別できません。'
+    : facts.selection
+      ? '選択領域のPAEは局所構造の崩れではなく相対配置の不確実性を示す可能性があります。局所pLDDTも確認してください。'
+      : highIptm
+        ? '高い界面スコアと不確実な相対配置は両立します。界面は妥当でも幾何学的な精度が低い可能性があります。'
+        : '弱い界面指標は相互作用が存在しない証明ではなく、この予測単独では強く支持できないことを示します。';
+  const falsification = facts.selection
+    ? '別の予測で同じ残基に大きく異なるPAEパターンが得られれば、この解釈は変わります。'
+    : primary
+      ? '別の予測でipTM、双方向PAE、衝突フラグが矛盾すれば、この界面レベルの結論は変わります。'
+      : '特定領域に対応するpLDDTまたはPAEが追加されれば、この限定的な結論を更新できます。';
+  let answer: string;
+  if (intent === 'scope_boundary') answer = '読み込んだ信頼度指標から、生物学的機能・治療効果・臨床的意義を確定することはできません。この予測に対する信頼度だけを示します。';
+  else if (intent === 'comparison') answer = '比較対象のラベルだけではモデル間の差を根拠付きで評価できません。各予測の同じ指標を並べた比較データが必要です。';
+  else if (intent === 'structural_region_priority') answer = domain && domainRange
+    ? `${domain.label}（${domainRange.chainId} ${domainRange.start}–${domainRange.end}）を優先して確認してください${domain.meanPlddt !== null ? `。平均pLDDTは${Math.round(domain.meanPlddt)}です` : ''}。`
+    : '読み込んだファイルにはドメイン注釈またはPAE由来の構造領域がありません。';
+  else if (intent === 'selection_support' && facts.selection) answer = facts.selection.medianPae === null
+    ? `選択領域（${facts.selection.label}）には整列誤差の値がありません。`
+    : `選択領域（${facts.selection.label}）の双方向PAE中央値は${facts.selection.medianPae.toFixed(1)} Åです。`;
+  else if (intent === 'clash_review') answer = facts.hasClash === null ? '読み込んだサマリーには衝突フラグがありません。'
+    : facts.hasClash ? 'サマリーに衝突フラグがあります。局所形状を確認してから解釈してください。'
+      : 'サマリーに衝突フラグはありませんが、物理的に妥当な形状である保証ではありません。';
+  else if (intent === 'alternative_interpretation') answer = alternative;
+  else if (intent === 'falsification') answer = falsification;
+  else if (intent === 'regional_uncertainty') answer = low
+    ? `${low.chainId} ${low.start}–${low.end}を最も慎重に扱ってください。平均pLDDTは${Math.round(low.meanPlddt)}です。`
+    : facts.hasPlddt ? (facts.hasPae ? '持続的な低pLDDT領域は検出されませんでした。次に高PAEブロックを確認してください。' : '持続的な低pLDDT領域は検出されず、PAE行列もありません。')
+      : facts.hasPae ? 'pLDDTがありません。相対配置の不確実性は高PAEブロックで確認してください。' : 'pLDDTもPAEもないため、領域の優先順位付けはできません。';
+  else answer = strong ? `全体として信頼できる可能性が高いです${low ? 'が、局所的な注意点があります' : ''}。`
+    : mixed ? '界面スコアは強い一方、双方向PAEは相対配置の確実性が混在していることを示します。'
+      : highIptm ? 'ipTMは界面を支持しますが、双方向PAEは相対配置に広い不確実性を示します。'
+        : moderate ? '界面は妥当な可能性がありますが、相対配置を局所的に確認する必要があります。'
+          : '与えられた信頼度指標だけでは、信頼できる界面レベルの結論を支持できません。';
+  return {
+    ...base,
+    answer,
+    alternative,
+    falsification,
+    caveats: [
+      '信頼度は実験的検証ではありません。',
+      ...(primary?.paeMin !== null && primary?.paeMin !== undefined ? ['最小PAEは最良の局所セルです。代表的な解釈には双方向PAE中央値を使います。'] : []),
+      ...(facts.domains.some((item) => item.source === 'pae') ? ['PAE由来の領域は構造セグメントであり、機能ドメイン注釈ではありません。'] : []),
+      ...facts.notices,
+    ].slice(0, 3),
+  };
+}
+
+export function buildLocalAssistantResponse(facts: AnalysisFacts, prediction?: Prediction, question = '', plan?: AssistantPlan): AssistantResponse {
+  const intent = plan?.intent ?? inferIntent(question, facts);
+  const language = plan?.language ?? detectLanguage(question);
+  const base = legacyBuildLocalAssistantResponse(facts, prediction, plan ? questionForIntent(intent) : question);
+  const domain = topStructuralRegion(facts);
+  const domainRange = domain ? loadedDomainRange(facts, domain.chainId, domain.start, domain.end) : null;
+  const localized = language === 'ja' ? japaneseResponse(base, intent, facts) : intent === 'comparison'
+    ? { ...base, answer: 'A comparison label alone cannot support a model-to-model conclusion. Matching deterministic metrics from both predictions are required.' }
+    : intent === 'structural_region_priority' && domain && domainRange
+      ? { ...base, answer: `${domain.label} (${domainRange.chainId} ${domainRange.start}–${domainRange.end}) deserves the closest inspection${domain.meanPlddt !== null ? `; its mean pLDDT is ${Math.round(domain.meanPlddt)}` : ''}.` }
+      : base;
+  const catalog = buildEvidenceCatalog(facts);
+  const requestedRefs = plan?.evidenceRefs.length ? plan.evidenceRefs : defaultEvidenceRefs(intent);
+  let evidence = requestedRefs.map((ref) => catalog.get(ref)).filter((item): item is AssistantEvidence => Boolean(item));
+  if (!evidence.length) evidence = defaultEvidenceRefs(intent).map((ref) => catalog.get(ref)).filter((item): item is AssistantEvidence => Boolean(item));
+  const defaultFollowUps: AssistantIntent[] = facts.selection
+    ? ['selection_support', 'alternative_interpretation', 'falsification']
+    : facts.primaryInterface
+      ? ['regional_uncertainty', 'alternative_interpretation', 'falsification']
+      : ['overall_assessment', 'regional_uncertainty', 'falsification'];
+  const followUpIntents = plan?.followUpIntents.length ? plan.followUpIntents : defaultFollowUps;
+  return {
+    ...localized,
+    evidence: evidence.slice(0, 4),
+    nextQuestions: [...new Set(followUpIntents.map((nextIntent) => followUpQuestion(nextIntent, facts, language)))].slice(0, 3),
   };
 }

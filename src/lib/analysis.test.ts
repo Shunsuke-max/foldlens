@@ -23,6 +23,22 @@ describe('confidence analysis', () => {
     const facts = buildAnalysisFacts(demoResult, prediction, null);
     expect(buildLocalAssistantResponse(facts, prediction, 'Which region should I avoid interpreting?').answer).toBe('Treat S 612–626 most cautiously; its mean pLDDT is 54.');
     expect(buildLocalAssistantResponse(facts, prediction, 'Will this drug work clinically?').answer).toContain('cannot establish biological function');
+    expect(buildLocalAssistantResponse(facts, prediction, '最も不確実な領域はどこですか？').answer).toBe('S 612–626を最も慎重に扱ってください。平均pLDDTは54です。');
+  });
+
+  it('materializes model plans from canonical facts instead of model-authored measurements', () => {
+    const facts = buildAnalysisFacts(demoResult, prediction, null);
+    const response = buildLocalAssistantResponse(facts, undefined, 'Is the interface reliable?', {
+      intent: 'interface_reliability',
+      evidenceRefs: ['primary_interface_pae', 'primary_interface_iptm'],
+      language: 'en',
+      followUpIntents: ['regional_uncertainty', 'falsification'],
+    });
+
+    expect(response.evidence.map((item) => item.id)).toEqual(['primary_interface_pae', 'primary_interface_iptm']);
+    expect(response.evidence[0].value).toBe(`${facts.primaryInterface!.paeMedian!.toFixed(1)} Å`);
+    expect(response.evidence[0].action.residueRanges).toEqual(facts.chainRanges.filter((range) => ['Q', 'S'].includes(range.chainId)));
+    expect(response.nextQuestions).toHaveLength(2);
   });
 
   it('grounds domain questions in loaded boundaries and confidence metrics', () => {

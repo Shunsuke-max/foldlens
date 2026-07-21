@@ -32,14 +32,14 @@ The bundled sample is clearly labelled. All five sample entries reuse the same e
 
 The browser derives a small `AnalysisFacts` object containing only the currently visible metrics, chain IDs, residue ranges, PAE summaries, and notices. The server sends those facts and the user's question to the OpenAI Responses API using Zod Structured Outputs.
 
-The model is instructed to:
+The model is instructed to return a bounded analysis plan that:
 
-- use only supplied facts;
-- distinguish prediction confidence from experimental evidence;
-- avoid clinical, therapeutic, docking, and mechanistic claims;
-- return evidence actions that reference only supplied chains and residue ranges.
+- classifies the question into a supported scientific intent;
+- chooses only semantic evidence IDs backed by the supplied facts;
+- selects the response language and useful follow-up intents;
+- routes clinical, therapeutic, mechanistic, and biological-truth questions to a strict scope boundary.
 
-The validated response drives both the explanation and evidence-linked viewer actions. If the API key is absent, quota is unavailable, the request fails, or output validation fails, FoldLens returns the same response shape from a deterministic local analyzer and visibly labels the answer as offline.
+The server—not the model—materializes every sentence, rounded measurement, evidence card, residue range, and viewer action from deterministic facts. This keeps the model useful for natural-language routing without allowing it to invent scientific values. If the API key is absent, quota is unavailable, the request times out, or plan validation fails, FoldLens returns the same response shape from a deterministic local analyzer and visibly labels the answer as offline. The UI supports cancellation and one-click retry.
 
 The OpenAI API key is server-only. The public endpoint has a configurable per-IP rate limit, and the request schema limits text and array sizes.
 
@@ -88,6 +88,7 @@ Open <http://127.0.0.1:4178>. Select **Explore sample result** for a no-setup wa
 | `OPENAI_API_KEY` | Enables live grounded GPT-5.6 analysis | unset → local analyzer |
 | `OPENAI_MODEL` | Responses API model | `gpt-5.6-sol` |
 | `MOCK_ANALYSIS` | Forces local analysis when `true` | `false` |
+| `ANALYSIS_TIMEOUT_MS` | Maximum live analysis time, bounded to 1–30 seconds | `12000` |
 | `ANALYSIS_RATE_LIMIT_MAX` | Requests allowed per IP and window | `20` |
 | `ANALYSIS_RATE_LIMIT_WINDOW_MS` | Rate-limit window in milliseconds | `3600000` |
 | `RENDER_API_URL` | Render service origin used only by the Vercel API proxy | unset |
