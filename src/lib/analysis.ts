@@ -230,7 +230,7 @@ function legacyBuildLocalAssistantResponse(facts: AnalysisFacts, prediction?: Pr
   });
 
   const asksForBiology = /(drug|clinical|disease|treat|efficacy|mechanism|function|binds? in vivo|biologically correct)/.test(normalizedQuestion);
-  const asksForUncertainty = /(uncertain|avoid|caution|least confident|low confidence|weak|unreliable|inspect first)/.test(normalizedQuestion);
+  const asksForUncertainty = /(uncertain|avoid|caution|least confident|lowest confidence|low confidence|weakest confidence|weak|unreliable|inspect first)/.test(normalizedQuestion);
   const asksForClash = /(clash|overlap|steric)/.test(normalizedQuestion);
   const asksForSelection = /(selected|selection|this region)/.test(normalizedQuestion) && Boolean(facts.selection);
   const asksForAlternative = /(challenge|alternative|another interpretation|competing explanation|反証|別の解釈)/.test(normalizedQuestion);
@@ -301,7 +301,7 @@ function legacyBuildLocalAssistantResponse(facts: AnalysisFacts, prediction?: Pr
       ? ['What is the strongest evidence for this selection?', 'Challenge this interpretation.', 'What would change this conclusion?']
       : primary
         ? [`Which part of the ${primary.chainA}–${primary.chainB} interface is least certain?`, 'Challenge this interface conclusion.', 'What would change this conclusion?']
-        : ['What should I inspect first?', 'Which region is least certain?', 'What would change this conclusion?'],
+        : ['Which region has the lowest confidence?', 'Summarize the available prediction confidence.', 'What would change this conclusion?'],
     caveats: [
       'Confidence is not experimental validation.',
       ...(primary?.paeMin !== null && primary?.paeMin !== undefined ? ['Minimum PAE is the best local cell; representative interpretation uses reciprocal median PAE.'] : []),
@@ -420,7 +420,7 @@ function inferIntent(question: string, facts: AnalysisFacts): AssistantIntent {
   if (/(clash|overlap|steric|衝突|重なり)/.test(normalized)) return 'clash_review';
   if (/(challenge|alternative|another interpretation|competing explanation|別の解釈|対立仮説)/.test(normalized)) return 'alternative_interpretation';
   if (/(falsif|change this conclusion|change the conclusion|weaken this conclusion|反証|結論を変|覆す)/.test(normalized)) return 'falsification';
-  if (/(uncertain|avoid|caution|least confident|low confidence|weak|unreliable|inspect first|不確実|避け|注意|信頼できない|信頼性が低|最初に確認)/.test(normalized)) return 'regional_uncertainty';
+  if (/(uncertain|avoid|caution|least confident|lowest confidence|low confidence|weakest confidence|weak|unreliable|inspect first|不確実|避け|注意|信頼度が最も低|信頼できない|信頼性が低|最初に確認)/.test(normalized)) return 'regional_uncertainty';
   if (/(interface|interaction|界面|相互作用)/.test(normalized)) return 'interface_reliability';
   return 'overall_assessment';
 }
@@ -430,8 +430,8 @@ function questionForIntent(intent: AssistantIntent) {
     overall_assessment: 'Summarize the prediction confidence.',
     interface_reliability: 'Is the interface reliable?',
     selection_support: 'What does the selected region support?',
-    regional_uncertainty: 'Which region should I inspect first?',
-    structural_region_priority: 'Which structural region should I inspect first?',
+    regional_uncertainty: 'Which region has the lowest confidence?',
+    structural_region_priority: 'Which structural region has the weakest confidence?',
     clash_review: 'Does this model have a clash?',
     scope_boundary: 'Will this work clinically?',
     alternative_interpretation: 'Challenge this interpretation.',
@@ -455,8 +455,8 @@ function followUpQuestion(intent: AssistantIntent, facts: AnalysisFacts, languag
     overall_assessment: 'What is the strongest evidence for this conclusion?',
     interface_reliability: `Which part of the ${pair} interface is least certain?`,
     selection_support: 'What is the strongest evidence for this selection?',
-    regional_uncertainty: 'Which region should I inspect first?',
-    structural_region_priority: 'Which structural region should I inspect first?',
+    regional_uncertainty: 'Which region has the lowest confidence?',
+    structural_region_priority: 'Which structural region has the weakest confidence?',
     clash_review: 'Does the summary report a clash?',
     scope_boundary: 'What can these confidence metrics support?',
     alternative_interpretation: 'Challenge this interpretation.',
@@ -467,8 +467,8 @@ function followUpQuestion(intent: AssistantIntent, facts: AnalysisFacts, languag
     overall_assessment: 'この結論を支える最も強い根拠は何ですか？',
     interface_reliability: `${pair}界面で最も不確実な部分はどこですか？`,
     selection_support: '選択領域を支える最も強い根拠は何ですか？',
-    regional_uncertainty: '最初に確認すべき領域はどこですか？',
-    structural_region_priority: '最初に確認すべき構造領域はどこですか？',
+    regional_uncertainty: '予測信頼度が最も低い領域はどこですか？',
+    structural_region_priority: '予測信頼度が最も低い構造領域はどこですか？',
     clash_review: 'サマリーに衝突フラグはありますか？',
     scope_boundary: 'この信頼度指標から何が言えますか？',
     alternative_interpretation: 'この解釈に対する別の説明はありますか？',

@@ -48,9 +48,12 @@ function fallbackNotice(reason?: string | null) {
 
 function questionFor(facts: AnalysisFacts, focusMode: FocusMode) {
   if (facts.selection) return 'What does the selected PAE region support?';
-  if (focusMode === 'domains' && facts.domains.length) return 'Which structural region should I inspect first?';
+  if (focusMode === 'domains' && facts.domains.length) return 'Which structural region has the weakest confidence?';
   const pair = facts.primaryInterface;
-  return pair ? `Is the ${pair.chainA}–${pair.chainB} interface reliable?` : 'What should I inspect first?';
+  if (pair) return `Is the ${pair.chainA}–${pair.chainB} interface reliable?`;
+  return facts.hasPlddt || facts.hasPae
+    ? 'Which region has the lowest confidence?'
+    : 'Summarize the available prediction confidence.';
 }
 
 function focusLabel(facts: AnalysisFacts, focusMode: FocusMode) {
