@@ -51,7 +51,7 @@ FoldLens is a local-first AlphaFold 3 result workspace. The loaded-result state 
 
 ## Allowed first-viewport copy
 
-`FoldLens`, `KRAS · SOS1 complex`, `Private · processed on this device`, `Open result`, `Export`, `Predictions`, `Confidence`, `Chains`, `Surface`, `Reset view`, `Ranking`, `ipTM`, `pTM`, `Clashes`, `Interpretation`, `Predicted aligned error`.
+`FoldLens`, `HIV-1 protease · darunavir`, `Private · processed on this device`, `Open result`, `Export`, `Predictions`, `Confidence`, `Chains`, `Surface`, `Reset view`, `Ranking`, `ipTM`, `pTM`, `Clashes`, `Interpretation`, `Predicted aligned error`.
 
 ## Motion
 

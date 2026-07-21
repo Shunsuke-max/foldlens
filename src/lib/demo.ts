@@ -1,10 +1,10 @@
-import demoCifUrl from '../assets/kras-sos1.cif?url';
+import demoCifUrl from '../assets/4hla.cif?url';
 import type { AF3Result } from '../types/af3';
 
-const CHAIN_IDS = ['Q', 'R', 'S'];
+const CHAIN_IDS = ['A', 'B'];
 
-export function makeDemoPae(size = 192, variant = 0): number[][] {
-  const boundary = Math.floor(size / 3);
+export function makeDemoPae(size = 198, variant = 0): number[][] {
+  const boundary = Math.floor(size / CHAIN_IDS.length);
   return Array.from({ length: size }, (_, y) =>
     Array.from({ length: size }, (_, x) => {
       const sameBlock = Math.floor(x / boundary) === Math.floor(y / boundary);
@@ -12,30 +12,26 @@ export function makeDemoPae(size = 192, variant = 0): number[][] {
       const texture = 1.1 * (Math.sin(x * 0.19) + Math.cos(y * 0.13) + 2);
       const modelVariation = variant * 0.42 + Math.sin((x + y + variant * 11) * 0.07) * variant * 0.08;
       if (sameBlock) return Math.min(31, 2.1 + diagonal * 0.045 + texture + modelVariation);
-      const qToS =
-        (x < boundary && y >= boundary * 2) ||
-        (y < boundary && x >= boundary * 2);
-      return Math.min(31, (qToS ? 5.2 : 9.5) + diagonal * 0.02 + texture + modelVariation);
+      return Math.min(31, 5.2 + diagonal * 0.02 + texture + modelVariation);
     }),
   );
 }
 
 const scores = [0.92, 0.89, 0.84, 0.81, 0.76];
-const tokenChainIds = Array.from({ length: 192 }, (_, i) => CHAIN_IDS[Math.min(2, Math.floor(i / 64))]);
+const tokenChainIds = Array.from({ length: 198 }, (_, i) => CHAIN_IDS[Math.min(CHAIN_IDS.length - 1, Math.floor(i / 99))]);
 const tokenResidues = tokenChainIds.map((chainId, tokenIndex) => {
-  const ordinal = tokenIndex % 64;
-  const residueNumber = chainId === 'S' ? 564 + ordinal : 1 + ordinal;
+  const residueNumber = tokenIndex % 99 + 1;
   return { tokenIndex, chainId, residueId: String(residueNumber), residueNumber, residueName: 'RES' };
 });
 const tokenPlddts = tokenResidues.map((token) => {
-  if (token.chainId === 'S' && token.residueNumber !== undefined && token.residueNumber >= 612 && token.residueNumber <= 626) {
-    return 50 + ((token.residueNumber - 612) % 5) * 2;
+  if (token.chainId === 'B' && token.residueNumber !== undefined && token.residueNumber >= 43 && token.residueNumber <= 58) {
+    return 50 + ((token.residueNumber - 43) % 5) * 2;
   }
   return 84 + (token.tokenIndex % 9);
 });
 
 export const demoResult: AF3Result = {
-  jobName: 'KRAS · SOS1 complex',
+  jobName: 'HIV-1 protease · darunavir',
   sourceName: 'FoldLens demo',
   predictions: scores.map((score, index) => ({
     id: `demo-${index + 1}`,
@@ -49,32 +45,41 @@ export const demoResult: AF3Result = {
       hasClash: index === 4,
       chainIds: CHAIN_IDS,
       chainPairIptm: [
-        [0.91, 0.78, 0.87],
-        [0.78, 0.89, 0.82],
-        [0.87, 0.82, 0.93],
+        [0.93, 0.90],
+        [0.90, 0.94],
       ],
       chainPairPaeMin: [
-        [0, 7.8, 2.1],
-        [7.8, 0, 3.6],
-        [2.1, 3.6, 0],
+        [0, 2.1],
+        [2.1, 0],
       ],
     },
-    confidence: { pae: makeDemoPae(192, index), tokenChainIds, tokenResidues, tokenPlddts },
+    confidence: { pae: makeDemoPae(198, index), tokenChainIds, tokenResidues, tokenPlddts },
   })),
   chains: [
-    { id: 'Q', label: 'KRAS · allosteric', kind: 'protein', color: '#a9d94a', range: '1–166' },
-    { id: 'R', label: 'KRAS · active site', kind: 'protein', color: '#42bdf5', range: '1–166' },
-    { id: 'S', label: 'SOS1', kind: 'protein', color: '#367de8', range: '564–1049' },
-    { id: 'ligand:GNP', label: 'Ligand · GNP', kind: 'ligand', color: '#aa73df', ligandCodes: ['GNP'], sourceChainIds: ['Q'], instanceCount: 1 },
-    { id: 'ligand:MG', label: 'Ion · MG', kind: 'ligand', color: '#f0b455', ligandCodes: ['MG'], sourceChainIds: ['Q'], instanceCount: 1 },
+    { id: 'A', label: 'HIV-1 protease · monomer A', kind: 'protein', color: '#a9d94a', range: '1–99' },
+    { id: 'B', label: 'HIV-1 protease · monomer B', kind: 'protein', color: '#42bdf5', range: '1–99' },
+    { id: 'ligand:017', label: 'Ligand · darunavir (017)', kind: 'ligand', color: '#aa73df', ligandCodes: ['017'], sourceChainIds: ['A', 'B'], instanceCount: 1 },
   ],
   domainAnnotations: [
-    { id: 'q-ras-g', label: 'Ras G domain', chainId: 'Q', start: 1, end: 166, source: 'provided' },
-    { id: 'r-ras-g', label: 'Ras G domain', chainId: 'R', start: 1, end: 166, source: 'provided' },
-    { id: 's-rem', label: 'REM domain', chainId: 'S', start: 564, end: 741, source: 'provided' },
-    { id: 's-cdc25', label: 'CDC25 domain', chainId: 'S', start: 742, end: 1049, source: 'provided' },
+    { id: 'a-catalytic-loop', label: 'Catalytic loop A', chainId: 'A', start: 23, end: 32, source: 'provided' },
+    { id: 'a-flap', label: 'Flap A', chainId: 'A', start: 43, end: 58, source: 'provided' },
+    { id: 'b-catalytic-loop', label: 'Catalytic loop B', chainId: 'B', start: 23, end: 32, source: 'provided' },
+    { id: 'b-flap', label: 'Flap B', chainId: 'B', start: 43, end: 58, source: 'provided' },
   ],
-  notices: ['Demo structure: PDB 1NVV. All five entries reuse the same experimental coordinates; only the illustrative confidence values vary.'],
+  biologicalContext: {
+    displayName: 'HIV-1 protease',
+    organism: 'Human immunodeficiency virus 1 (HIV-1)',
+    summary: {
+      en: 'HIV-1 protease is a viral enzyme that cleaves Gag and Gag–Pol polyproteins into the mature proteins needed to assemble an infectious virus particle.',
+      ja: 'HIV-1プロテアーゼは、ウイルスのGagおよびGag–Polポリプロテインを切断し、感染性を持つウイルス粒子の形成に必要な成熟タンパク質を作る酵素です。',
+    },
+    relevance: {
+      en: 'Because this cleavage step is essential for viral maturation, HIV-1 protease is a major antiretroviral drug target. The 4HLA structure contains the protease inhibitor darunavir in its active site.',
+      ja: 'この切断はウイルス成熟に不可欠なため、HIV-1プロテアーゼは主要な抗レトロウイルス薬の標的です。4HLA構造では、阻害薬ダルナビルが活性部位に結合しています。',
+    },
+    sourceLabel: 'PDB 4HLA sample annotation',
+  },
+  notices: ['Demo structure: PDB 4HLA. All five entries reuse the same experimental coordinates; only the illustrative confidence values vary.'],
   isDemo: true,
 };
 

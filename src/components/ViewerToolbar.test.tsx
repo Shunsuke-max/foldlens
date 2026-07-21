@@ -34,6 +34,7 @@ describe('ViewerToolbar', () => {
 
     expect(screen.getByRole('button', { name: 'Chains' }).getAttribute('aria-pressed')).toBe('false');
     expect(screen.getByRole('button', { name: 'Confidence' }).getAttribute('aria-pressed')).toBe('false');
+    expect(screen.getByRole('button', { name: 'Reset view' })).toBeTruthy();
   });
 
   it('lets the user adjust and reset structure brightness', () => {

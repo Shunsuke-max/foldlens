@@ -85,64 +85,71 @@ export function PaeHeatmap({
   const chainPairs = useMemo(() => chainSegments.flatMap((first, firstIndex) => chainSegments.slice(firstIndex + 1).map((second) => [first, second] as const)), [chainSegments]);
   const maxValue = activeMode === 'difference' ? 16 : 32;
   const matchedPair = activeSelection && chainPairs.findIndex(([x, y]) => activeSelection.xStart === x.index && activeSelection.xEnd === x.end && activeSelection.yStart === y.index && activeSelection.yEnd === y.end);
-  const pairValue = typeof matchedPair === 'number' && matchedPair >= 0 ? String(matchedPair) : '';
+  const isCustomSelection = Boolean(activeSelection) && matchedPair === -1;
+  const pairValue = typeof matchedPair === 'number' && matchedPair >= 0 ? String(matchedPair) : isCustomSelection ? 'custom' : '';
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !activePae?.length) return;
-    const context = canvas.getContext('2d');
-    if (!context) return;
-    const box = canvas.getBoundingClientRect();
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    canvas.width = Math.max(1, Math.floor(box.width * dpr));
-    canvas.height = Math.max(1, Math.floor(box.height * dpr));
-    const width = canvas.width;
-    const height = canvas.height;
-    const image = context.createImageData(width, height);
-    const n = activePae.length;
-    for (let y = 0; y < height; y += 1) {
-      const sourceY = Math.min(n - 1, Math.floor((y / height) * n));
-      for (let x = 0; x < width; x += 1) {
-        const sourceX = Math.min(n - 1, Math.floor((x / width) * n));
-        const [r, g, b] = paeColor(activePae[sourceX]?.[sourceY] ?? maxValue, maxValue);
-        const offset = (y * width + x) * 4;
-        image.data[offset] = r;
-        image.data[offset + 1] = g;
-        image.data[offset + 2] = b;
-        image.data[offset + 3] = 255;
+    const draw = () => {
+      const context = canvas.getContext('2d');
+      if (!context) return;
+      const box = canvas.getBoundingClientRect();
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      canvas.width = Math.max(1, Math.floor(box.width * dpr));
+      canvas.height = Math.max(1, Math.floor(box.height * dpr));
+      const width = canvas.width;
+      const height = canvas.height;
+      const image = context.createImageData(width, height);
+      const n = activePae.length;
+      for (let y = 0; y < height; y += 1) {
+        const sourceY = Math.min(n - 1, Math.floor((y / height) * n));
+        for (let x = 0; x < width; x += 1) {
+          const sourceX = Math.min(n - 1, Math.floor((x / width) * n));
+          const [r, g, b] = paeColor(activePae[sourceX]?.[sourceY] ?? maxValue, maxValue);
+          const offset = (y * width + x) * 4;
+          image.data[offset] = r;
+          image.data[offset + 1] = g;
+          image.data[offset + 2] = b;
+          image.data[offset + 3] = 255;
+        }
       }
-    }
-    context.putImageData(image, 0, 0);
-    context.strokeStyle = 'rgba(238, 248, 255, .72)';
-    context.lineWidth = Math.max(1, dpr);
-    for (const boundary of chainBoundaries.slice(1)) {
-      const position = (boundary.index / n) * width;
-      context.beginPath(); context.moveTo(position, 0); context.lineTo(position, height); context.stroke();
-      const y = (boundary.index / n) * height;
-      context.beginPath(); context.moveTo(0, y); context.lineTo(width, y); context.stroke();
-    }
-    if (activeSelection) {
-      const x = (activeSelection.xStart / n) * width;
-      const y = (activeSelection.yStart / n) * height;
-      const selectedWidth = ((activeSelection.xEnd - activeSelection.xStart + 1) / n) * width;
-      const selectedHeight = ((activeSelection.yEnd - activeSelection.yStart + 1) / n) * height;
-      context.fillStyle = 'rgba(255, 255, 255, .12)';
-      context.fillRect(x, y, selectedWidth, selectedHeight);
-      context.strokeStyle = '#ffffff';
-      context.lineWidth = 2 * dpr;
-      context.strokeRect(x, y, selectedWidth, selectedHeight);
-      context.strokeStyle = '#42bdf5';
+      context.putImageData(image, 0, 0);
+      context.strokeStyle = 'rgba(238, 248, 255, .72)';
       context.lineWidth = Math.max(1, dpr);
-      context.strokeRect(x + 2 * dpr, y + 2 * dpr, Math.max(0, selectedWidth - 4 * dpr), Math.max(0, selectedHeight - 4 * dpr));
-    }
-    if (hover) {
-      const x = ((hover.x + 0.5) / n) * width;
-      const y = ((hover.y + 0.5) / n) * height;
-      context.strokeStyle = 'rgba(255,255,255,.9)';
-      context.lineWidth = Math.max(1, dpr);
-      context.beginPath(); context.moveTo(x, 0); context.lineTo(x, height); context.stroke();
-      context.beginPath(); context.moveTo(0, y); context.lineTo(width, y); context.stroke();
-    }
+      for (const boundary of chainBoundaries.slice(1)) {
+        const position = (boundary.index / n) * width;
+        context.beginPath(); context.moveTo(position, 0); context.lineTo(position, height); context.stroke();
+        const y = (boundary.index / n) * height;
+        context.beginPath(); context.moveTo(0, y); context.lineTo(width, y); context.stroke();
+      }
+      if (activeSelection) {
+        const x = (activeSelection.xStart / n) * width;
+        const y = (activeSelection.yStart / n) * height;
+        const selectedWidth = ((activeSelection.xEnd - activeSelection.xStart + 1) / n) * width;
+        const selectedHeight = ((activeSelection.yEnd - activeSelection.yStart + 1) / n) * height;
+        context.fillStyle = 'rgba(255, 255, 255, .12)';
+        context.fillRect(x, y, selectedWidth, selectedHeight);
+        context.strokeStyle = '#ffffff';
+        context.lineWidth = 2 * dpr;
+        context.strokeRect(x, y, selectedWidth, selectedHeight);
+        context.strokeStyle = '#42bdf5';
+        context.lineWidth = Math.max(1, dpr);
+        context.strokeRect(x + 2 * dpr, y + 2 * dpr, Math.max(0, selectedWidth - 4 * dpr), Math.max(0, selectedHeight - 4 * dpr));
+      }
+      if (hover) {
+        const x = ((hover.x + 0.5) / n) * width;
+        const y = ((hover.y + 0.5) / n) * height;
+        context.strokeStyle = 'rgba(255,255,255,.9)';
+        context.lineWidth = Math.max(1, dpr);
+        context.beginPath(); context.moveTo(x, 0); context.lineTo(x, height); context.stroke();
+        context.beginPath(); context.moveTo(0, y); context.lineTo(width, y); context.stroke();
+      }
+    };
+    draw();
+    const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(draw);
+    observer?.observe(canvas);
+    return () => observer?.disconnect();
   }, [activePae, activeSelection, chainBoundaries, hover, maxValue]);
 
   const pointerToken = (event: React.PointerEvent<HTMLCanvasElement>) => {
@@ -226,12 +233,17 @@ export function PaeHeatmap({
         {!compact && <p className="pae-link-note">Amber marks PAE-selected residues. Interface contacts separately use ≤5 Å geometry.</p>}
         {activePae?.length && <div className="pae-quick-actions">
           <label className="pae-pair-picker">
-            <span>Chain pair</span>
+            <span>{isCustomSelection ? 'Linked range' : 'Chain pair'}</span>
             <select aria-label="Chain pair" value={pairValue} disabled={!selectionCompatible} onChange={(event) => {
+              if (!event.target.value) {
+                onSelection(null);
+                return;
+              }
               const pair = chainPairs[Number(event.target.value)];
               if (pair) onSelection({ xStart: pair[0].index, xEnd: pair[0].end, yStart: pair[1].index, yEnd: pair[1].end });
             }}>
               <option value="">Choose pair…</option>
+              {isCustomSelection && <option value="custom" disabled>Custom · {selectionLabel ?? 'linked residue range'}</option>}
               {chainPairs.map(([x, y], index) => <option value={index} key={`${x.id}-${y.id}-${index}`}>{x.id} aligned → {y.id} scored</option>)}
             </select>
           </label>

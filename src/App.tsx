@@ -27,6 +27,19 @@ import type { AF3Result, FocusMode, FoldLensViewState, Selection } from './types
 import type { EvidenceAction } from './types/analysis';
 
 type MobileTab = 'structure' | 'pae' | 'models' | 'insights';
+const COMPACT_WORKSPACE_QUERY = '(max-width: 960px)';
+
+function useCompactWorkspace() {
+  const [compact, setCompact] = useState(() => typeof window !== 'undefined' && window.matchMedia(COMPACT_WORKSPACE_QUERY).matches);
+  useEffect(() => {
+    const media = window.matchMedia(COMPACT_WORKSPACE_QUERY);
+    const sync = () => setCompact(media.matches);
+    sync();
+    media.addEventListener('change', sync);
+    return () => media.removeEventListener('change', sync);
+  }, []);
+  return compact;
+}
 
 function getHighlightedChain(result: AF3Result, selectedId: string, selection: Selection) {
   if (!selection) return undefined;
@@ -40,8 +53,10 @@ function getHighlightedChain(result: AF3Result, selectedId: string, selection: S
 }
 
 export default function App() {
+  const compactWorkspace = useCompactWorkspace();
   const [result, setResult] = useState<AF3Result>(demoResult);
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
+  const [currentAnalysisPaused, setCurrentAnalysisPaused] = useState(false);
   const [selectedId, setSelectedId] = useState(demoResult.predictions[0].id);
   const [compareId, setCompareId] = useState<string>();
   const [visibleChains, setVisibleChains] = useState(() => new Set(demoResult.chains.map((chain) => chain.id)));
@@ -86,6 +101,13 @@ export default function App() {
     : undefined;
   const domainSource = domains.every((domain) => domain.source === 'pae') ? 'pae'
     : domains.some((domain) => domain.source === 'pae') ? 'mixed' : 'annotation';
+  const linkedViewParts = [
+    focusMode === 'interface' ? `Interface ${interfaceChains?.join('–') ?? ''}`
+      : focusMode === 'pocket' ? `Pocket ${ligandFocus.label ?? ''}`
+        : focusMode === 'domains' ? 'Domains' : undefined,
+    selectionLabel ? `PAE ${selectionLabel}` : undefined,
+    comparePrediction ? `Overlay ${comparePrediction.label}` : undefined,
+  ].filter((part): part is string => Boolean(part));
   const visibleChainIds = useMemo(() => [...visibleChains], [visibleChains]);
   const persistentView = useMemo<FoldLensViewState>(() => ({
     selectedId: prediction.id,
@@ -148,6 +170,14 @@ export default function App() {
     if (workspaceOpen) window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
   }, [result, workspaceOpen]);
 
+  useEffect(() => {
+    if (!compactWorkspace || mobileTab !== 'models' || !comparePrediction) return;
+    const frame = window.requestAnimationFrame(() => {
+      document.getElementById('mobile-comparison-summary')?.scrollIntoView({ block: 'nearest', behavior: 'auto' });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [compactWorkspace, comparePrediction, mobileTab]);
+
   const showOpenDialog = () => {
     setError(undefined);
     setPendingResult(undefined);
@@ -194,6 +224,7 @@ export default function App() {
     setSelectedDomainId(view?.selectedDomainId);
     setMobileTab(view?.mobileTab ?? 'structure');
     setInspectorTab(view?.inspectorTab ?? 'ask');
+    setCurrentAnalysisPaused(false);
     setWorkspaceOpen(true);
   };
 
@@ -249,6 +280,7 @@ export default function App() {
       setSelection(null);
       setMobileTab('structure');
       setInspectorTab('ask');
+      setCurrentAnalysisPaused(false);
       setWorkspaceOpen(true);
     } catch {
       setToast('The sample structure could not be loaded. Open a local AF3 result to continue.');
@@ -318,7 +350,7 @@ export default function App() {
   };
 
   const exportReport = () => {
-    const mobile = window.matchMedia('(max-width: 820px)').matches;
+    const mobile = window.matchMedia(COMPACT_WORKSPACE_QUERY).matches;
     const html = buildHtmlReport({
       result, prediction, facts: analysisFacts, selectionLabel,
       structureImage: canvasImage(mobile ? '.mobile-viewer .molecule-host canvas' : '.viewer-pane .molecule-host canvas'),
@@ -370,6 +402,22 @@ export default function App() {
     window.setTimeout(() => setToast(undefined), 2600);
   };
 
+  const clearLinkedView = () => {
+    setCompareId(undefined);
+    setSelection(null);
+    setFocusMode('all');
+    setSelectedDomainId(undefined);
+    setSurface(false);
+    setSurfaceOnly(false);
+    setToast('Linked view cleared');
+    window.setTimeout(() => setToast(undefined), 2200);
+  };
+
+  const selectMobileTab = (tab: MobileTab) => {
+    setMobileTab(tab);
+    window.requestAnimationFrame(() => document.getElementById(`mobile-tab-${tab}`)?.focus({ preventScroll: true }));
+  };
+
   const tabs: { id: MobileTab; label: string }[] = [
     { id: 'structure', label: 'Structure' },
     { id: 'pae', label: 'PAE' },
@@ -377,8 +425,19 @@ export default function App() {
     { id: 'insights', label: 'Insights' },
   ];
 
+  const returnHome = () => {
+    setDialogOpen(false);
+    setCurrentAnalysisPaused(true);
+    setWorkspaceOpen(false);
+  };
+
+  const continueCurrentAnalysis = () => {
+    setCurrentAnalysisPaused(false);
+    setWorkspaceOpen(true);
+  };
+
   return (
-    <AssistantSessionProvider facts={analysisFacts} prediction={prediction} focusMode={focusMode}>
+    <AssistantSessionProvider facts={analysisFacts} prediction={prediction} focusMode={focusMode} comparisonLabel={comparePrediction?.label}>
     <div
       className="app"
       onDragEnter={(event) => { event.preventDefault(); setDragging(true); }}
@@ -386,10 +445,20 @@ export default function App() {
       onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDragging(false); }}
       onDrop={(event) => { event.preventDefault(); setDragging(false); void openFiles(Array.from(event.dataTransfer.files)); }}
     >
-      {!workspaceOpen ? <WelcomeScreen demoBusy={demoBusy} recentSession={recentSession} resumeBusy={resumeBusy} onFiles={(files) => void openFiles(files)} onDemo={() => void openDemo()} onResume={() => void resumeRecentSession()} onForgetRecent={() => void forgetRecentSession()} /> : <>
-      <AppHeader jobName={result.jobName} isDemo={result.isDemo} onOpen={showOpenDialog} onExportReport={exportReport} onSaveSession={saveSession} />
+      {!workspaceOpen ? <WelcomeScreen
+        demoBusy={demoBusy}
+        currentAnalysis={currentAnalysisPaused ? { jobName: result.jobName, predictionCount: result.predictions.length, isDemo: result.isDemo } : undefined}
+        recentSession={recentSession}
+        resumeBusy={resumeBusy}
+        onFiles={(files) => void openFiles(files)}
+        onDemo={() => void openDemo()}
+        onContinueCurrent={continueCurrentAnalysis}
+        onResume={() => void resumeRecentSession()}
+        onForgetRecent={() => void forgetRecentSession()}
+      /> : <>
+      <AppHeader jobName={result.jobName} isDemo={result.isDemo} onHome={returnHome} onOpen={showOpenDialog} onExportReport={exportReport} onSaveSession={saveSession} />
 
-      <main className="desktop-workspace">
+      {!compactWorkspace && <main className="desktop-workspace">
         <div className="workspace-main">
           <PredictionRail predictions={result.predictions} selectedId={prediction.id} compareId={comparePrediction?.id} onSelect={selectPrediction} onCompare={setCompareId} onOpen={showOpenDialog} />
           <section className="viewer-pane">
@@ -456,10 +525,10 @@ export default function App() {
           primaryLabel={prediction.label}
           comparison={comparePrediction ? { label: comparePrediction.label, pae: comparePrediction.confidence?.pae, chainIds: comparePrediction.confidence?.tokenChainIds, tokenResidues: comparePrediction.confidence?.tokenResidues, selectionStats: comparisonFacts?.selection } : undefined}
         />
-      </main>
+      </main>}
 
-      <main className="mobile-workspace">
-        <section className="mobile-viewer">
+      {compactWorkspace && <main className="mobile-workspace">
+        <section className={`mobile-viewer ${mobileTab === 'structure' ? '' : 'compact'}`}>
           <div className="mobile-viewer-actions">
             <button className="icon-button" type="button" onClick={() => document.querySelector('.mobile-viewer')?.requestFullscreen?.()} aria-label="Expand structure"><Icon name="expand" /></button>
             <span className="mobile-action-spacer" />
@@ -499,27 +568,34 @@ export default function App() {
             onChange={selectFocusMode}
           />
           {result.isDemo && <button className="demo-ribbon" type="button" onClick={showOpenDialog}><strong>Sample data</strong><span>One structure · illustrative confidence</span><b>Open</b></button>}
-          {comparePrediction && <ComparisonSummary primary={prediction} comparison={comparePrediction} primarySelection={analysisFacts.selection} comparisonSelection={comparisonFacts?.selection} onClose={() => setCompareId(undefined)} />}
         </section>
         <ScoreStrip summary={prediction.summary} compact />
+        {linkedViewParts.length > 0 && <div className="mobile-state-bar" role="status" aria-live="polite">
+          <span><strong>Current view</strong><small title={linkedViewParts.join(' · ')}>{linkedViewParts.join(' · ')}</small></span>
+          <button type="button" onClick={clearLinkedView}>Clear all</button>
+        </div>}
         <nav className="mobile-tabs" role="tablist" aria-label="Result sections" onKeyDown={(event) => {
           if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
           event.preventDefault();
           const current = tabs.findIndex((tab) => tab.id === mobileTab);
           const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (current + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
-          setMobileTab(tabs[next].id);
-          window.requestAnimationFrame(() => document.getElementById(`mobile-tab-${tabs[next].id}`)?.focus());
+          selectMobileTab(tabs[next].id);
         }}>
-          {tabs.map((tab) => <button id={`mobile-tab-${tab.id}`} type="button" role="tab" aria-selected={mobileTab === tab.id} aria-controls={`mobile-panel-${tab.id}`} tabIndex={mobileTab === tab.id ? 0 : -1} className={mobileTab === tab.id ? 'active' : ''} key={tab.id} onClick={() => setMobileTab(tab.id)}>{tab.label}</button>)}
+          {tabs.map((tab) => <button id={`mobile-tab-${tab.id}`} type="button" role="tab" aria-selected={mobileTab === tab.id} aria-controls={`mobile-panel-${tab.id}`} tabIndex={mobileTab === tab.id ? 0 : -1} className={mobileTab === tab.id ? 'active' : ''} key={tab.id} onClick={() => selectMobileTab(tab.id)}>{tab.label}</button>)}
         </nav>
         <div className="mobile-tab-content">
-          <section id="mobile-panel-structure" role="tabpanel" aria-labelledby="mobile-tab-structure" hidden={mobileTab !== 'structure'}><Inspector summary={prediction.summary} chains={result.chains} visibleChains={visibleChains} onSetChainVisibility={setChainVisibility} notices={result.notices} /></section>
-          <section id="mobile-panel-pae" role="tabpanel" aria-labelledby="mobile-tab-pae" hidden={mobileTab !== 'pae'}><PaeHeatmap pae={prediction.confidence?.pae} chainIds={prediction.confidence?.tokenChainIds} tokenResidues={prediction.confidence?.tokenResidues} selection={selection} selectionStats={analysisFacts.selection} onSelection={setSelection} selectionLabel={selectionLabel} primaryLabel={prediction.label} comparison={comparePrediction ? { label: comparePrediction.label, pae: comparePrediction.confidence?.pae, chainIds: comparePrediction.confidence?.tokenChainIds, tokenResidues: comparePrediction.confidence?.tokenResidues, selectionStats: comparisonFacts?.selection } : undefined} compact /></section>
-          <section id="mobile-panel-models" role="tabpanel" aria-labelledby="mobile-tab-models" hidden={mobileTab !== 'models'}><PredictionRail predictions={result.predictions} selectedId={prediction.id} compareId={comparePrediction?.id} onSelect={selectPrediction} onCompare={setCompareId} onOpen={showOpenDialog} /></section>
-          <section id="mobile-panel-insights" role="tabpanel" aria-labelledby="mobile-tab-insights" hidden={mobileTab !== 'insights'}><WorkspaceInspector tab={inspectorTab} onTabChange={setInspectorTab} prediction={prediction} chains={result.chains} visibleChains={visibleChains} onSetChainVisibility={setChainVisibility} notices={result.notices} onAction={runEvidenceAction} /></section>
+          <section id="mobile-panel-structure" role="tabpanel" aria-labelledby="mobile-tab-structure" hidden={mobileTab !== 'structure'}>{mobileTab === 'structure' && <Inspector summary={prediction.summary} chains={result.chains} visibleChains={visibleChains} onSetChainVisibility={setChainVisibility} notices={result.notices} />}</section>
+          <section id="mobile-panel-pae" role="tabpanel" aria-labelledby="mobile-tab-pae" hidden={mobileTab !== 'pae'}>{mobileTab === 'pae' && <PaeHeatmap pae={prediction.confidence?.pae} chainIds={prediction.confidence?.tokenChainIds} tokenResidues={prediction.confidence?.tokenResidues} selection={selection} selectionStats={analysisFacts.selection} onSelection={setSelection} selectionLabel={selectionLabel} primaryLabel={prediction.label} comparison={comparePrediction ? { label: comparePrediction.label, pae: comparePrediction.confidence?.pae, chainIds: comparePrediction.confidence?.tokenChainIds, tokenResidues: comparePrediction.confidence?.tokenResidues, selectionStats: comparisonFacts?.selection } : undefined} compact />}</section>
+          <section id="mobile-panel-models" role="tabpanel" aria-labelledby="mobile-tab-models" hidden={mobileTab !== 'models'}>
+            {mobileTab === 'models' && <div className="mobile-models-panel">
+              {comparePrediction && <ComparisonSummary id="mobile-comparison-summary" primary={prediction} comparison={comparePrediction} primarySelection={analysisFacts.selection} comparisonSelection={comparisonFacts?.selection} onClose={() => setCompareId(undefined)} />}
+              <PredictionRail predictions={result.predictions} selectedId={prediction.id} compareId={comparePrediction?.id} onSelect={selectPrediction} onCompare={setCompareId} onOpen={showOpenDialog} />
+            </div>}
+          </section>
+          <section id="mobile-panel-insights" role="tabpanel" aria-labelledby="mobile-tab-insights" hidden={mobileTab !== 'insights'}>{mobileTab === 'insights' && <WorkspaceInspector tab={inspectorTab} onTabChange={setInspectorTab} prediction={prediction} chains={result.chains} visibleChains={visibleChains} onSetChainVisibility={setChainVisibility} notices={result.notices} onAction={runEvidenceAction} />}</section>
         </div>
         <button className="mobile-open" type="button" onClick={showOpenDialog}><Icon name="file" />Open another result</button>
-      </main>
+      </main>}
       </>}
 
       {dragging && <div className="drop-overlay"><Icon name="folder" size={42} /><strong>Drop AlphaFold 3 output</strong><span>ZIP, folder contents, CIF, or confidence JSON</span></div>}

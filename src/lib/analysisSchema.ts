@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { AnalysisFacts, AssistantResponse, EvidenceAction } from '../types/analysis';
 import type { ResidueRange, Selection } from '../types/af3';
+import { buildEvidenceCatalog } from './analysis';
 
 export const ResidueRangeSchema = z.object({
   chainId: z.string().min(1).max(12),
@@ -20,20 +21,92 @@ export const EvidenceActionSchema = z.object({
   }).nullable(),
 });
 
+export const AssistantIntentSchema = z.enum([
+  'overall_assessment',
+  'interface_reliability',
+  'selection_support',
+  'regional_uncertainty',
+  'structural_region_priority',
+  'clash_review',
+  'biological_context',
+  'scope_boundary',
+  'alternative_interpretation',
+  'falsification',
+  'comparison',
+]);
+
+export const EvidenceRefSchema = z.enum([
+  'primary_interface_iptm',
+  'primary_interface_pae',
+  'lowest_confidence_region',
+  'active_selection_pae',
+  'top_structural_region_plddt',
+  'top_structural_region_pae',
+  'ranking_score',
+  'overall_ptm',
+  'overall_iptm',
+  'clash_status',
+]);
+
+export const AssistantPlanSchema = z.object({
+  intent: AssistantIntentSchema,
+  evidenceRefs: z.array(EvidenceRefSchema).max(4)
+    .refine((refs) => refs.length === new Set(refs).size, 'Evidence references must be unique'),
+  language: z.enum(['en', 'ja']),
+  followUpIntents: z.array(AssistantIntentSchema).min(1).max(3)
+    .refine((intents) => intents.length === new Set(intents).size, 'Follow-up intents must be unique'),
+  backgroundAnswer: z.string().trim().min(1).max(700).nullable(),
+}).superRefine((plan, context) => {
+  if (plan.intent === 'biological_context' && plan.backgroundAnswer === null) {
+    context.addIssue({ code: 'custom', path: ['backgroundAnswer'], message: 'Biological context requires a background answer' });
+  }
+  if (plan.intent !== 'biological_context' && plan.backgroundAnswer !== null) {
+    context.addIssue({ code: 'custom', path: ['backgroundAnswer'], message: 'Only biological context may include a background answer' });
+  }
+});
+
+export const AssistantDraftSchema = z.object({
+  intent: AssistantIntentSchema,
+  evidenceRefs: z.array(EvidenceRefSchema).max(4)
+    .refine((refs) => refs.length === new Set(refs).size, 'Evidence references must be unique'),
+  language: z.enum(['en', 'ja']),
+  answer: z.string().trim().min(1).max(1200),
+  alternative: z.string().trim().min(1).max(700),
+  falsification: z.string().trim().min(1).max(700),
+  nextQuestions: z.array(z.string().trim().min(3).max(200)).min(1).max(3)
+    .refine((questions) => questions.length === new Set(questions).size, 'Follow-up questions must be unique'),
+  caveats: z.array(z.string().trim().min(1).max(320)).min(1).max(4),
+});
+
+const AssistantEvidenceSchema = z.object({
+  id: z.string().min(1).max(60),
+  label: z.string().min(1).max(80),
+  value: z.string().min(1).max(100),
+  interpretation: z.string().min(1).max(180),
+  action: EvidenceActionSchema,
+});
+
 export const AssistantResponseSchema = z.object({
-  answer: z.string().min(1).max(500),
-  evidence: z.array(z.object({
-    id: z.string().min(1).max(60),
-    label: z.string().min(1).max(80),
-    value: z.string().min(1).max(100),
-    interpretation: z.string().min(1).max(180),
-    action: EvidenceActionSchema,
-  })).max(4),
-  caveats: z.array(z.string().min(1).max(240)).max(4),
+  kind: z.enum(['confidence_analysis', 'biological_background']),
+  answer: z.string().min(1).max(1200),
+  evidence: z.array(AssistantEvidenceSchema).max(4)
+    .refine((items) => items.length === new Set(items.map((item) => item.id)).size, 'Evidence IDs must be unique'),
+  alternative: z.string().min(1).max(700),
+  falsification: z.string().min(1).max(700),
+  nextQuestions: z.array(z.string().min(3).max(200)).min(1).max(3),
+  caveats: z.array(z.string().min(1).max(320)).max(4),
 });
 
 export const AssistantRequestSchema = z.object({
   question: z.string().trim().min(3).max(400),
+  history: z.array(z.object({
+    role: z.enum(['user', 'assistant']),
+    content: z.string().min(1).max(1200),
+  })).max(8).default([]),
+  viewContext: z.object({
+    focusMode: z.enum(['all', 'interface', 'pocket', 'domains']),
+    comparisonLabel: z.string().max(100).nullable(),
+  }).default({ focusMode: 'all', comparisonLabel: null }),
   facts: z.object({
     jobName: z.string().max(200),
     predictionLabel: z.string().max(100),
@@ -86,6 +159,19 @@ export const AssistantRequestSchema = z.object({
         yEnd: z.number().int().nonnegative(),
       }),
     }).nullable(),
+    biologicalContext: z.object({
+      displayName: z.string().min(1).max(160),
+      organism: z.string().max(160).optional(),
+      summary: z.object({
+        en: z.string().min(1).max(700),
+        ja: z.string().min(1).max(700),
+      }),
+      relevance: z.object({
+        en: z.string().min(1).max(700),
+        ja: z.string().min(1).max(700),
+      }).optional(),
+      sourceLabel: z.string().min(1).max(160),
+    }).nullable(),
     notices: z.array(z.string()).max(8),
   }),
 });
@@ -134,5 +220,40 @@ export function isGroundedEvidenceAction(action: EvidenceAction, facts: Analysis
 }
 
 export function isGroundedAssistantResponse(response: AssistantResponse, facts: AnalysisFacts) {
-  return response.evidence.every((item) => isGroundedEvidenceAction(item.action, facts));
+  const catalog = buildEvidenceCatalog(facts);
+  if (response.evidence.length !== new Set(response.evidence.map((item) => item.id)).size) return false;
+  return response.evidence.every((item) => {
+    const expected = catalog.get(item.id);
+    return Boolean(expected)
+      && item.label === expected!.label
+      && item.value === expected!.value
+      && item.interpretation === expected!.interpretation
+      && item.action.type === expected!.action.type
+      && sameStrings(item.action.chainIds, expected!.action.chainIds)
+      && sameRanges(item.action.residueRanges, expected!.action.residueRanges)
+      && sameSelection(item.action.selection, expected!.action.selection)
+      && isGroundedEvidenceAction(item.action, facts);
+  });
+}
+
+export function normalizeAssistantResponse(raw: unknown, fallback: AssistantResponse, facts: AnalysisFacts): AssistantResponse {
+  const parsed = AssistantResponseSchema.safeParse(raw);
+  if (parsed.success && isGroundedAssistantResponse(parsed.data, facts)) return parsed.data;
+  if (typeof raw !== 'object' || raw === null) return fallback;
+
+  const legacy = raw as Partial<Record<keyof AssistantResponse, unknown>>;
+  const evidence = z.array(AssistantEvidenceSchema).max(4).safeParse(legacy.evidence);
+  const nextQuestions = z.array(z.string().min(3).max(200)).min(1).max(3).safeParse(legacy.nextQuestions);
+  const caveats = z.array(z.string().min(1).max(320)).max(4).safeParse(legacy.caveats);
+  const candidate: AssistantResponse = {
+    kind: legacy.kind === 'biological_background' ? 'biological_background' : fallback.kind,
+    answer: typeof legacy.answer === 'string' && legacy.answer.trim() ? legacy.answer.slice(0, 1200) : fallback.answer,
+    evidence: evidence.success ? evidence.data : fallback.evidence,
+    alternative: typeof legacy.alternative === 'string' && legacy.alternative.trim() ? legacy.alternative.slice(0, 700) : fallback.alternative,
+    falsification: typeof legacy.falsification === 'string' && legacy.falsification.trim() ? legacy.falsification.slice(0, 700) : fallback.falsification,
+    nextQuestions: nextQuestions.success ? nextQuestions.data : fallback.nextQuestions,
+    caveats: caveats.success ? caveats.data : fallback.caveats,
+  };
+  if (!isGroundedAssistantResponse(candidate, facts)) candidate.evidence = fallback.evidence;
+  return AssistantResponseSchema.safeParse(candidate).success ? candidate : fallback;
 }

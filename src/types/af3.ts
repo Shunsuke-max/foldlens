@@ -61,8 +61,17 @@ export type AF3Result = {
   predictions: Prediction[];
   chains: ChainInfo[];
   domainAnnotations?: DomainAnnotation[];
+  biologicalContext?: BiologicalContext;
   notices: string[];
   isDemo?: boolean;
+};
+
+export type BiologicalContext = {
+  displayName: string;
+  organism?: string;
+  summary: { en: string; ja: string };
+  relevance?: { en: string; ja: string };
+  sourceLabel: string;
 };
 
 export type Selection = {

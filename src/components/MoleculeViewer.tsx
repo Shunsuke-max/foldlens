@@ -289,6 +289,7 @@ export function MoleculeViewer({ cif, confidence, compareCif, compareLabel, chai
       if (cancelled) return;
       threeDmolRef.current = ThreeDmol;
       const viewer = (ThreeDmol as any).createViewer(host, { backgroundColor: '#07131d', antialias: true });
+      host.querySelectorAll('canvas[id="undefined"]').forEach((canvas) => canvas.removeAttribute('id'));
       viewerRef.current = viewer;
       try {
         viewer.addModel(cif, 'cif');
@@ -361,8 +362,14 @@ export function MoleculeViewer({ cif, confidence, compareCif, compareLabel, chai
 
   useEffect(() => {
     const onResize = () => viewerRef.current?.resize();
+    const host = hostRef.current;
+    const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(onResize);
+    if (host) observer?.observe(host);
     window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', onResize);
+    };
   }, []);
 
   const handleViewerKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {

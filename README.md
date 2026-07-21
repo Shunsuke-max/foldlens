@@ -20,26 +20,28 @@ FoldLens keeps that review loop in one workspace. It does not claim that confide
 - Toggle chains, confidence/chain coloring, molecular surface, and focused interface, pocket, or predicted-region views.
 - Inspect detected ligands and ions in a dedicated list, toggle equivalent copies together, and see CCD labels anchored in 3D.
 - Select the PAE heatmap and highlight the corresponding chain or residue range in 3D.
-- Ask FoldLens a question and receive a short GPT-5.6 interpretation grounded only in deterministic facts extracted from the loaded result.
+- Ask FoldLens about prediction confidence or basic protein biology, with general scientific background clearly separated from claims supported by the loaded result.
 - Act on cited evidence with controls such as **Show interface** and **Show residues**.
 - Export a JSON session or a self-contained HTML review report.
 - Use responsive Structure, PAE, Models, and Insights views on mobile.
 - Keep structure parsing in the browser; FoldLens does not upload the source CIF, JSON files, atomic coordinates, or sequences to its server.
 
-The bundled sample is clearly labelled. All five sample entries reuse the same experimental PDB 1NVV coordinates; only their illustrative confidence variants differ. They are not AlphaFold outputs and their overlay is not a structural comparison.
+The bundled sample is clearly labelled. All five sample entries reuse the same experimental PDB 4HLA HIV-1 protease–darunavir coordinates; only their illustrative confidence variants differ. They are not AlphaFold outputs and their overlay is not a structural comparison.
 
 ## How GPT-5.6 is used
 
-The browser derives a small `AnalysisFacts` object containing only the currently visible metrics, chain IDs, residue ranges, PAE summaries, and notices. The server sends those facts and the user's question to the OpenAI Responses API using Zod Structured Outputs.
+The browser derives a small `AnalysisFacts` object containing only the currently visible metrics, chain IDs, residue ranges, PAE summaries, and notices. The server sends those facts, the user's question, and a bounded recent discussion to the OpenAI Responses API using Zod Structured Outputs.
 
-The model is instructed to:
+The model is instructed to return a bounded, fully written analysis draft that:
 
-- use only supplied facts;
-- distinguish prediction confidence from experimental evidence;
-- avoid clinical, therapeutic, docking, and mechanistic claims;
-- return evidence actions that reference only supplied chains and residue ranges.
+- classifies the question into a supported scientific intent;
+- chooses only semantic evidence IDs backed by the supplied facts;
+- answers the question directly in the user's language, with a substantive explanation, competing interpretation, and falsification condition;
+- proposes contextual follow-up questions and relevant caveats;
+- uses explicit identity annotations for basic function, pathway, organism, or broad-mechanism questions without inferring function from confidence metrics;
+- routes clinical efficacy, treatment, dosing, in-vivo binding, and biological-truth claims to a strict scope boundary.
 
-The validated response drives both the explanation and evidence-linked viewer actions. If the API key is absent, quota is unavailable, the request fails, or output validation fails, FoldLens returns the same response shape from a deterministic local analyzer and visibly labels the answer as offline.
+For confidence analysis, the server—not the model—materializes every rounded measurement, evidence card, residue range, and viewer action from deterministic facts. The live answer uses GPT-5.6 Sol with medium reasoning by default; both model and reasoning effort remain configurable. For basic biology questions, GPT-5.6 may provide a schema-bounded background answer from explicit protein identity hints; the UI labels it as scientific background and states that it was not inferred from pLDDT, PAE, or ipTM. If the API key is absent, quota is unavailable, the request times out, or answer validation fails, FoldLens returns the same response shape from a deterministic local analyzer and visibly labels the answer as offline. The UI supports cancellation and one-click retry.
 
 The OpenAI API key is server-only. The public endpoint has a configurable per-IP rate limit, and the request schema limits text and array sizes.
 
@@ -53,7 +55,7 @@ Codex was used as an iterative engineering and product-design partner throughout
 - helped generate and compare design concepts, then record intentional deviations in fidelity ledgers;
 - expanded regression coverage while investigating parser edge cases, confidence semantics, and viewer interactions.
 
-The key human decisions were to keep raw scientific files local, send only the user's question plus derived facts to GPT-5.6, bound viewer actions to the active model, show evidence and caveats with each answer, label the sample truthfully, and prefer explicit scientific limitations over a more impressive but misleading demo.
+The key human decisions were to keep raw scientific files local, send only the user's question plus derived facts to GPT-5.6, bound viewer actions to the active model, separate general biological knowledge from prediction evidence, show caveats with each answer, label the sample truthfully, and prefer explicit scientific limitations over a more impressive but misleading demo.
 
 ## Architecture
 
@@ -87,7 +89,9 @@ Open <http://127.0.0.1:4178>. Select **Explore sample result** for a no-setup wa
 | --- | --- | --- |
 | `OPENAI_API_KEY` | Enables live grounded GPT-5.6 analysis | unset → local analyzer |
 | `OPENAI_MODEL` | Responses API model | `gpt-5.6-sol` |
+| `OPENAI_REASONING_EFFORT` | Reasoning depth: `none`, `low`, `medium`, `high`, `xhigh`, or `max` | `medium` |
 | `MOCK_ANALYSIS` | Forces local analysis when `true` | `false` |
+| `ANALYSIS_TIMEOUT_MS` | Maximum live analysis time, bounded to 1–60 seconds | `25000` |
 | `ANALYSIS_RATE_LIMIT_MAX` | Requests allowed per IP and window | `20` |
 | `ANALYSIS_RATE_LIMIT_WINDOW_MS` | Rate-limit window in milliseconds | `3600000` |
 | `RENDER_API_URL` | Render service origin used only by the Vercel API proxy | unset |
@@ -134,13 +138,13 @@ Pushes to the repository deploy both services through their Git integrations. Re
 - `.zst` compressed AlphaFold 3 outputs must be decompressed before opening.
 - The primary PAE interaction links a selected matrix region to its corresponding chain or residue range; it is not an atomic-contact calculation.
 - Predicted regions inferred from PAE are labelled as predicted regions, not named functional domains.
-- FoldLens interprets confidence outputs; it does not establish biological truth or experimental validation.
+- FoldLens can explain general protein biology, but it does not infer function from confidence outputs or establish biological truth, clinical efficacy, or experimental validation.
 - The in-memory public-demo rate limit resets when the server restarts and is not a substitute for an OpenAI project spending limit.
 
 ## Data, terms, and attribution
 
 - User-provided AlphaFold Server output remains subject to the [AlphaFold Server Output Terms](https://alphafoldserver.com/output-terms), including its non-commercial and attribution requirements.
-- The bundled experimental structure is [RCSB PDB 1NVV](https://www.rcsb.org/structure/1NVV), DOI [`10.2210/pdb1NVV/pdb`](https://doi.org/10.2210/pdb1NVV/pdb).
+- The bundled experimental structure is [RCSB PDB 4HLA](https://www.rcsb.org/structure/4HLA), DOI [`10.2210/pdb4HLA/pdb`](https://doi.org/10.2210/pdb4HLA/pdb).
 - Molecular rendering uses [3Dmol.js](https://3dmol.org/) under the BSD-3-Clause license.
 - Full notices are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 

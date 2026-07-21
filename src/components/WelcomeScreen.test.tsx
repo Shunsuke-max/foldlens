@@ -15,6 +15,7 @@ describe('WelcomeScreen', () => {
       resumeBusy={false}
       onFiles={onFiles}
       onDemo={onDemo}
+      onContinueCurrent={vi.fn()}
       onResume={vi.fn()}
       onForgetRecent={vi.fn()}
     />);
@@ -24,7 +25,7 @@ describe('WelcomeScreen', () => {
     fireEvent.change(screen.getByLabelText('Select AlphaFold 3 ZIP or files'), { target: { files: [file] } });
     expect(onFiles).toHaveBeenCalledWith([file]);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Explore sample result' }));
+    fireEvent.click(screen.getByRole('button', { name: /Start 90-second sample/ }));
     expect(onDemo).toHaveBeenCalledOnce();
   });
 
@@ -37,6 +38,7 @@ describe('WelcomeScreen', () => {
       resumeBusy={false}
       onFiles={vi.fn()}
       onDemo={vi.fn()}
+      onContinueCurrent={vi.fn()}
       onResume={onResume}
       onForgetRecent={onForgetRecent}
     />);
@@ -50,5 +52,25 @@ describe('WelcomeScreen', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Forget' }));
     expect(onResume).toHaveBeenCalledOnce();
     expect(onForgetRecent).toHaveBeenCalledOnce();
+  });
+
+  it('continues the current in-memory analysis after returning home', () => {
+    const onContinueCurrent = vi.fn();
+    render(<WelcomeScreen
+      demoBusy={false}
+      currentAnalysis={{ jobName: 'HIV-1 protease · Darunavir', predictionCount: 1 }}
+      recentSession={{ jobName: 'Older run', sourceName: 'older.zip', predictionCount: 3, savedAt: '2026-07-21T00:00:00.000Z' }}
+      resumeBusy={false}
+      onFiles={vi.fn()}
+      onDemo={vi.fn()}
+      onContinueCurrent={onContinueCurrent}
+      onResume={vi.fn()}
+      onForgetRecent={vi.fn()}
+    />);
+
+    expect(screen.getByRole('heading', { name: 'HIV-1 protease · Darunavir' })).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Older run' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Continue current analysis' }));
+    expect(onContinueCurrent).toHaveBeenCalledOnce();
   });
 });

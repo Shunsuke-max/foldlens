@@ -70,7 +70,7 @@ export function ViewerToolbar({ colorMode, surface, surfaceOnly = false, colorMo
       <button type="button" aria-pressed={colorModeSelected && colorMode === 'chains'} className={colorModeSelected && colorMode === 'chains' ? 'active' : ''} onClick={() => onColorMode('chains')}><Icon name="link" />Chains</button>
       <button type="button" aria-pressed={surface} className={surface ? 'active' : ''} onClick={onSurface}><Icon name="surface" />Surface</button>
       <BrightnessControl brightness={brightness} onBrightness={onBrightness} />
-      <button type="button" className="viewer-reset" onClick={onReset}><Icon name="reset" /><span className="reset-label">Reset view</span></button>
+      <button type="button" className="viewer-reset" aria-label="Reset view" onClick={onReset}><Icon name="reset" /><span className="reset-label" aria-hidden="true">Reset view</span></button>
       <button type="button" className="toolbar-expand" onClick={onExpand} aria-label="Expand viewer"><Icon name="expand" /></button>
     </div>
   );

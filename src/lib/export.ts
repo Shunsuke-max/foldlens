@@ -135,6 +135,15 @@ export function isSession(value: unknown): value is FoldLensSession {
     && (view.inspectorTab === undefined || view.inspectorTab === 'analysis' || view.inspectorTab === 'ask'))) return false;
   if (new Set(result.predictions.map((item) => item.id)).size !== result.predictions.length || new Set(result.chains.map((chain) => chain.id)).size !== result.chains.length) return false;
   if (result.domainAnnotations !== undefined && (!Array.isArray(result.domainAnnotations) || result.domainAnnotations.length > 256 || !result.domainAnnotations.every((domain) => isRecord(domain) && typeof domain.id === 'string' && typeof domain.label === 'string' && typeof domain.chainId === 'string' && Number.isSafeInteger(domain.start) && Number.isSafeInteger(domain.end) && domain.start <= domain.end && (domain.source === 'interpro' || domain.source === 'provided')))) return false;
+  if (result.biologicalContext !== undefined) {
+    const context = result.biologicalContext;
+    if (!isRecord(context) || typeof context.displayName !== 'string' || typeof context.sourceLabel !== 'string'
+      || context.displayName.length > 160 || context.sourceLabel.length > 160
+      || context.organism !== undefined && (typeof context.organism !== 'string' || context.organism.length > 160)
+      || !isRecord(context.summary) || typeof context.summary.en !== 'string' || typeof context.summary.ja !== 'string'
+      || context.summary.en.length > 700 || context.summary.ja.length > 700
+      || context.relevance !== undefined && (!isRecord(context.relevance) || typeof context.relevance.en !== 'string' || typeof context.relevance.ja !== 'string' || context.relevance.en.length > 700 || context.relevance.ja.length > 700)) return false;
+  }
   const prediction = result.predictions.find((item) => item.id === view.selectedId);
   const knownPredictions = new Set(result.predictions.map((item) => item.id));
   const knownChains = new Set(result.chains.map((chain) => chain.id));
