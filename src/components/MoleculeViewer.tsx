@@ -36,6 +36,8 @@ type FocusDetails = {
 
 const WATER_RESIDUES = ['HOH', 'WAT', 'DOD'];
 const EMPTY_DOMAINS: DomainRegion[] = [];
+const SURFACE_OVERLAY_OPACITY = 0.46;
+const SURFACE_ONLY_OPACITY = 0.78;
 
 function interfaceSelections(interfaceChains?: [string, string]) {
   if (!interfaceChains) return null;
@@ -200,7 +202,7 @@ export function MoleculeViewer({ cif, confidence, compareCif, compareLabel, chai
       if (surface && index < 3) {
         surfaceTasks.push(Promise.resolve(viewer.addSurface(
           threeDmolRef.current.SurfaceType.VDW,
-          { opacity: 0.46, color: chainColor },
+          { opacity: surfaceOnly ? SURFACE_ONLY_OPACITY : SURFACE_OVERLAY_OPACITY, color: chainColor },
           { model: 0, chain: chain.id, hetflag: false },
         )));
       }

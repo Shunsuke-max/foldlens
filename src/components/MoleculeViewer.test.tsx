@@ -57,6 +57,34 @@ describe('MoleculeViewer comparison and keyboard controls', () => {
     await waitFor(() => expect(viewer.addSurface).toHaveBeenCalledWith(1, expect.anything(), { model: 0, chain: 'D', hetflag: false }));
   });
 
+  it('uses an opaque surface in surface-only mode while retaining translucent overlays', async () => {
+    viewer.addSurface.mockResolvedValue(undefined);
+    const props = {
+      cif: 'data_primary',
+      chains: [{ id: 'A', label: 'A', kind: 'protein' as const, color: '#42bdf5' }],
+      visibleChains: new Set(['A']),
+      colorMode: 'chains' as const,
+      brightness: 140,
+      surface: true,
+      resetSignal: 0,
+    };
+    const { rerender } = render(<MoleculeViewer {...props} surfaceOnly={false} />);
+    expect(screen.getByLabelText('Interactive three-dimensional molecular structure').style.getPropertyValue('--structure-brightness')).toBe('140%');
+    await waitFor(() => expect(viewer.addSurface).toHaveBeenCalledWith(
+      1,
+      { opacity: 0.46, color: '#42bdf5' },
+      { model: 0, chain: 'A', hetflag: false },
+    ));
+
+    viewer.addSurface.mockClear();
+    rerender(<MoleculeViewer {...props} surfaceOnly />);
+    await waitFor(() => expect(viewer.addSurface).toHaveBeenCalledWith(
+      1,
+      { opacity: 0.78, color: '#42bdf5' },
+      { model: 0, chain: 'A', hetflag: false },
+    ));
+  });
+
   it('renders a coordinate-anchored CCD label for each visible ligand instance', async () => {
     viewer.selectedAtoms.mockReturnValue([
       { resn: 'HEM', chain: 'A', resi: 142, x: 0, y: 0, z: 0 },
